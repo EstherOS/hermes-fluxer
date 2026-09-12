@@ -836,7 +836,13 @@ class Session:
         profile: ResolvedProfile,
         builder: Callable[..., Any],
     ) -> None:
-        """Resolve a unified-mode profile (realtime/omni backend)."""
+        """Resolve a unified-mode profile (realtime/omni backend).
+
+        In addition to the ``backend`` field (which becomes the realtime
+        streaming/ASR backend), resolves optional slot bindings from the
+        profile's raw config — e.g. ``audio_out`` for TTS — so the FSM can
+        use ``_audio_out.synthesize()`` when the agent responds.
+        """
         if profile.backend is not None:
             try:
                 backend = builder(profile.backend.backend, **profile.backend.options)
@@ -848,6 +854,42 @@ class Session:
                     profile.backend.backend,
                     exc,
                 )
+
+        # Resolve extra slot bindings from the raw spec (audio_out, talker, …)
+        raw_bindings = profile.raw.get("bindings") or {}
+        if isinstance(raw_bindings, dict) and raw_bindings:
+            from ..types import SenseBinding
+
+            for slot, raw_binding in raw_bindings.items():
+                if not isinstance(raw_binding, (str, dict)):
+                    logger.debug(
+                        "unified profile: skipping slot %s — invalid binding %r",
+                        slot, raw_binding,
+                    )
+                    continue
+                try:
+                    binding = SenseBinding.from_config(raw_binding)
+                except Exception as exc:
+                    logger.warning(
+                        "unified profile: slot %s binding parse failed: %s",
+                        slot, exc,
+                    )
+                    continue
+                try:
+                    slot_backend = await self._try_backend(
+                        builder, binding.backend, binding.options,
+                    )
+                    self._backends[slot] = slot_backend
+                    self._assign_slot(slot, slot_backend)
+                    logger.info(
+                        "unified profile: resolved slot %s → %s",
+                        slot, binding.backend,
+                    )
+                except Exception as exc:
+                    logger.warning(
+                        "unified profile: slot %s (%s) failed: %s",
+                        slot, binding.backend, exc,
+                    )
 
     async def _resolve_stitched(
         self,

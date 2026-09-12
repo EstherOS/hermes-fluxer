@@ -66,6 +66,14 @@ class OmniAdapterMixin:
             logger.info("Fluxer: registered CrispASR streaming backend (stdin pipe)")
         except Exception as exc:
             logger.debug("Fluxer: CrispASR streaming backend not available (%s)", exc)
+
+        # Register the CrispASR TTS backend (AudioOut — Kokoro via crispasr binary)
+        try:
+            from hermes_omni.backends.crispasr import CrispAsrTtsBackend
+            register_backend("local.crispasr_tts", CrispAsrTtsBackend, kind="sense")
+            logger.info("Fluxer: registered CrispASR TTS backend (Kokoro via crispasr)")
+        except Exception as exc:
+            logger.debug("Fluxer: CrispASR TTS backend not available (%s)", exc)
         profile_name = omni_cfg.get("default_profile", "split-local")
         self._omni_profile = resolve_profile(omni_cfg, name=profile_name)
         logger.info(

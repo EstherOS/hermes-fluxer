@@ -74,6 +74,9 @@ omni:
         - audio
         - image
         - video
+      bindings:
+        audio_out:
+          backend: local.crispasr_tts
     torch-unified:
       mode: unified
       tempo: realtime
