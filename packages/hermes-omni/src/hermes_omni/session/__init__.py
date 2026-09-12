@@ -939,8 +939,13 @@ class Session:
         if has_realtime:
             # Realtime backend handles audio — minimal FSM (duplex mode)
             fsm.on_vad_open = self._on_vad_open_realtime
+            fsm.on_transcript_ready = self._on_transcript_ready
+            fsm.on_first_token = self._on_first_token
+            fsm.on_full_answer = self._on_full_answer
             fsm.on_cancel_all = self._on_cancel_all
+            fsm.on_speech_end = self._on_speech_end
             fsm.on_preemption_done = self._on_preemption_done
+            fsm.on_fatal_error = self._on_fatal_error
         else:
             # Stitched FSM (ears/mouth/talker/thinker cascade)
             if has_audio_in:
@@ -1130,6 +1135,8 @@ class Session:
 
         if not text.strip():
             logger.debug("Empty transcript — skipping thinker, returning to IDLE")
+            # Reset FSM back to IDLE so it can accept new VAD events
+            self._fsm._state = SessionState.IDLE
             return
 
         thinker = self._thinker
