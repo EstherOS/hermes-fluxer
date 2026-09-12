@@ -1,0 +1,26 @@
+0.00.727.073 W load: control-looking token: 128247 '</s>' was not control-type; this is probably a bug in the model. its type will be overridden
+0.01.128.483 I cmn          init: llama threadpool init, n_threads = 2
+0.01.457.781 W init_audio: audio input is in experimental stage and may have reduced quality:
+    https://github.com/ggml-org/llama.cpp/discussions/13759
+0.01.459.143 I mtmd_cli_context: chat template example:
+<|im_start|>system
+You are a helpful assistant<|im_end|>
+<|im_start|>user
+Hello<|im_end|>
+<|im_start|>assistant
+Hi there<|im_end|>
+<|im_start|>user
+How are you?<|im_end|>
+<|im_start|>assistant
+
+0.01.459.147 I main: loading model: models/omni/qwen3-asr-0.6b/Qwen3-ASR-0.6B-Q8_0.gguf
+0.01.459.490 W WARN: This is an experimental CLI for testing multimodal capability.
+0.01.459.492 W       For normal use cases, please use the standard llama-cli
+0.01.671.387 I encoding mtmd batch, n_chunks = 1 (done = 1, total = 4)
+0.02.890.555 I mtmd batch encoding done in 1219 ms
+0.03.137.738 I encoding mtmd batch, n_chunks = 1 (done = 2, total = 4)
+0.03.336.612 I mtmd batch encoding done in 199 ms
+
+language English<asr_text>And so, my fellow Americans, ask not what your country can do for you; ask what you can do for your country.
+
+

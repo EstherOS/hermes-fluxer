@@ -1,0 +1,50 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+.ruff_cache/
+
+# Sandbox runtime state (not source)
+sandbox/hermes-home/auth.json
+sandbox/hermes-home/state.db*
+sandbox/hermes-home/kanban.db*
+sandbox/hermes-home/cron/
+sandbox/hermes-home/sessions/
+sandbox/hermes-home/logs/
+sandbox/hermes-home/runtime/
+sandbox/hermes-home/cache/
+sandbox/hermes-home/*.pid
+sandbox/hermes-home/*.lock
+sandbox/hermes-home/gateway.lock
+sandbox/hermes-home/gateway_state.json
+sandbox/hermes-home/gateway_voice_mode.json
+sandbox/hermes-home/install_id
+sandbox/hermes-home/.install_id.lock
+sandbox/hermes-home/.skills_prompt_snapshot.json
+sandbox/hermes-home/models_dev_cache*
+sandbox/hermes-home/channel_directory.json
+sandbox/hermes-home/gateway-starts.log
+sandbox/hermes-home/SOUL.md
+sandbox/hermes-home/auth.lock
+sandbox/hermes-home/plugins/fluxer
+sandbox/hermes-home/bin/
+sandbox/hermes-home/kanban/
+sandbox/hermes-home/skills/
+sandbox/hermes-home/.env
+sandbox/hermes-home/cache/
+sandbox/gw.log
+sandbox/*.json
+
+# Secrets
+.env
+**/.env
+
+# Generated evidence/status
+status/*.log
+status/*-evidence/
+sandbox/hermes-home/state/
+
+# OS
+.DS_Store
+Thumbs.db

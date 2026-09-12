@@ -1,0 +1,25 @@
+{
+ "op": 0,
+ "t": "MESSAGE_DELETE",
+ "s": 8,
+ "d": {
+  "author_id": "9991000000000000007",
+  "channel_id": "9991000000000000005",
+  "content": "Hermes probe: attachment round-trip (will be deleted)",
+  "guild_id": "9991000000000000002",
+  "id": "9991000000000000014",
+  "member": {
+   "accent_color": null,
+   "avatar": null,
+   "banner": null,
+   "communication_disabled_until": null,
+   "deaf": false,
+   "joined_at": "2026-09-11T04:41:08.345Z",
+   "mute": false,
+   "nick": null,
+   "roles": [
+    "9991000000000000009"
+   ]
+  }
+ }
+}
