@@ -46,8 +46,124 @@ updates:
   check: false
 _config_version: 42
 omni:
-  default_profile: torch-unified
+  default_profile: glados
   profiles:
+    # ── v2 profiles (component grammar) ────────────────────────────────────
+    jarvis:
+      components:
+        brain:
+          ins:
+            text: [user]
+            audio: [user]
+            image: [user]
+            video: [user]
+          outs:
+            text: [user]
+            audio: [user]
+          tools:
+            harness: core
+          io:
+            video:
+              mode: live
+              interrupt: false
+            audio:
+              mode: live
+              interrupt: true
+
+    thinker-talker:
+      components:
+        talker:
+          ins:
+            audio: [user]
+            text: [thinker]
+          outs:
+            text: [thinker]
+            audio: [user]
+          tools:
+            defer: thinker
+          io:
+            audio:
+              mode: live
+        thinker:
+          ins:
+            text: [user, talker]
+            image: [user]
+            video: [user]
+          outs:
+            text: [user, talker]
+          tools:
+            harness: core
+            image: capture
+            video: tape
+          io:
+            video:
+              mode: tape
+            image:
+              mode: frame
+
+    fast-talker:
+      components:
+        talker:
+          ins:
+            audio: [user]
+          outs:
+            audio: [user]
+          tools:
+            defer: core
+          io:
+            audio:
+              mode: live
+        core:
+          ins:
+            text: [user]
+          outs:
+            text: [talker, user]
+          tools:
+            harness: core
+
+    glados:
+      components:
+        ears:
+          ins:
+            audio: [user]
+          outs:
+            text: [talker]
+          io:
+            audio:
+              mode: live
+              interrupt: false
+        talker:
+          ins:
+            text: [ears, thinker]
+          outs:
+            text: [thinker]
+          tools:
+            defer: thinker
+        thinker:
+          ins:
+            text: [talker, user]
+            image: [user]
+            video: [user]
+          outs:
+            text: [talker, user]
+          tools:
+            harness: core
+            video: tape
+          io:
+            video:
+              mode: tape
+            image:
+              mode: frame
+        mouth:
+          ins:
+            text: [talker, thinker]
+          outs:
+            audio: [user]
+          io:
+            audio:
+              mode: live
+
+    # ── v1 profiles (legacy) ───────────────────────────────────────────────
     split-local:
       mode: stitched
       tempo: fast_half_duplex
@@ -84,70 +200,6 @@ omni:
         - audio
         - image
         - video
-    omn:
-      mode: unified
-      tempo: realtime
-      backend: local.crispasr_miniomni2
-      senses:
-        - text
-        - audio
-        - image
-        - video
-      options:
-        can_interrupt: true
-        tool_delegation: subagent
-    omni-thinker-talker:
-      mode: stitched
-      tempo: realtime
-      bindings:
-        audio_in:
-          backend: local.crispasr_miniomni2
-          options:
-            duplex_role: talker
-        audio_out:
-          backend: local.crispasr_miniomni2
-          options:
-            duplex_role: talker
-        talker:
-          backend: agent
-          options:
-            brief: fast-front
-        thinker:
-          backend: agent
-          options:
-            brief: default
-        image_in:
-          backend: local.smolvlm
-        video_in:
-          backend: local.smolvlm_video
-    piecemeal-omni:
-      mode: stitched
-      tempo: fast_half_duplex
-      bindings:
-        audio_in:
-          backend: local.qwen3asr
-          fallback:
-            - local.whispercpp
-        audio_out:
-          backend: local.qwen3tts
-          fallback:
-            - local.piper
-        image_in:
-          backend: local.smolvlm
-        video_in:
-          backend: local.smolvlm_video
-        talker:
-          backend: agent
-          options:
-            brief: fast-front
-        thinker:
-          backend: agent
-          options:
-            brief: default
-        text_in:
-          backend: agent
-        text_out:
-          backend: agent
     turn-basic:
       mode: unified
       tempo: turn
