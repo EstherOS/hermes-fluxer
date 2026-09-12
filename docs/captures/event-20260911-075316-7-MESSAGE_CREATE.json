@@ -1,0 +1,65 @@
+{
+ "op": 0,
+ "t": "MESSAGE_CREATE",
+ "s": 7,
+ "d": {
+  "attachments": [
+   {
+    "content_hash": "a1abfd410973b0111c215baa879b9edcd739e601659ba44168269767cc2e9108",
+    "content_type": "image/png",
+    "description": null,
+    "expires_at": "2029-09-10T07:53:59.514Z",
+    "filename": "fluxer_probe_pixel.png",
+    "flags": 0,
+    "height": 1,
+    "id": "1547877857999462400",
+    "nsfw": false,
+    "placeholder": "IAhCBwAI9wiIh4hwj3CI+AiIAAAAAAAA",
+    "proxy_url": "https://fluxerusercontent.com/attachments/1547815091221561347/1547877857999462400/fluxer_probe_pixel.png",
+    "size": 67,
+    "title": null,
+    "url": "https://fluxerusercontent.com/attachments/1547815091221561347/1547877857999462400/fluxer_probe_pixel.png",
+    "width": 1
+   }
+  ],
+  "author": {
+   "avatar": null,
+   "avatar_color": null,
+   "bot": true,
+   "discriminator": "5239",
+   "flags": 0,
+   "global_name": null,
+   "id": "1547828742208888832",
+   "username": "Esther"
+  },
+  "channel_id": "1547815091221561347",
+  "channel_type": 0,
+  "content": "Hermes probe: attachment round-trip (will be deleted)",
+  "edited_timestamp": null,
+  "embeds": [],
+  "flags": 0,
+  "guild_id": "1547815091221561344",
+  "id": "1547877857944932352",
+  "member": {
+   "accent_color": null,
+   "avatar": null,
+   "banner": null,
+   "communication_disabled_until": null,
+   "deaf": false,
+   "joined_at": "2026-09-11T04:41:08.345Z",
+   "mute": false,
+   "nick": null,
+   "roles": [
+    "1547829325254893569"
+   ]
+  },
+  "mention_everyone": false,
+  "mention_roles": [],
+  "mentions": [],
+  "pinned": false,
+  "stickers": [],
+  "timestamp": "2026-09-11T07:53:59.514Z",
+  "tts": false,
+  "type": 0
+ }
+}

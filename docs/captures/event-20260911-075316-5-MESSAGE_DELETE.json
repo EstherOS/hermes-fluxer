@@ -1,0 +1,25 @@
+{
+ "op": 0,
+ "t": "MESSAGE_DELETE",
+ "s": 5,
+ "d": {
+  "author_id": "1547828742208888832",
+  "channel_id": "1547815091221561347",
+  "content": "Hermes probe: EDITED \u2014 gateway MESSAGE_UPDATE capture",
+  "guild_id": "1547815091221561344",
+  "id": "1547877763321434112",
+  "member": {
+   "accent_color": null,
+   "avatar": null,
+   "banner": null,
+   "communication_disabled_until": null,
+   "deaf": false,
+   "joined_at": "2026-09-11T04:41:08.345Z",
+   "mute": false,
+   "nick": null,
+   "roles": [
+    "1547829325254893569"
+   ]
+  }
+ }
+}

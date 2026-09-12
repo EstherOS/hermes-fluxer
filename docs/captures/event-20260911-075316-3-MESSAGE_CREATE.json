@@ -1,0 +1,47 @@
+{
+ "op": 0,
+ "t": "MESSAGE_CREATE",
+ "s": 3,
+ "d": {
+  "attachments": [],
+  "author": {
+   "avatar": null,
+   "avatar_color": null,
+   "bot": true,
+   "discriminator": "5239",
+   "flags": 0,
+   "global_name": null,
+   "id": "1547828742208888832",
+   "username": "Esther"
+  },
+  "channel_id": "1547815091221561347",
+  "channel_type": 0,
+  "content": "Hermes probe: gateway MESSAGE_CREATE capture (will be edited then deleted)",
+  "edited_timestamp": null,
+  "embeds": [],
+  "flags": 0,
+  "guild_id": "1547815091221561344",
+  "id": "1547877763321434112",
+  "member": {
+   "accent_color": null,
+   "avatar": null,
+   "banner": null,
+   "communication_disabled_until": null,
+   "deaf": false,
+   "joined_at": "2026-09-11T04:41:08.345Z",
+   "mute": false,
+   "nick": null,
+   "roles": [
+    "1547829325254893569"
+   ]
+  },
+  "mention_everyone": false,
+  "mention_roles": [],
+  "mentions": [],
+  "pinned": false,
+  "stickers": [],
+  "timestamp": "2026-09-11T07:53:36.954Z",
+  "tts": false,
+  "type": 0
+ }
+}

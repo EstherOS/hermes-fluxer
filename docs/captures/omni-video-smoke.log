@@ -1,0 +1,118 @@
+0.00.374.810 I cmn          init: llama threadpool init, n_threads = 2
+0.00.454.646 I mtmd_cli_context: chat template example:
+<|im_start|>You are a helpful assistant
+
+User: Hello<end_of_utterance>
+Assistant: Hi there<end_of_utterance>
+User: How are you?<end_of_utterance>
+Assistant:
+0.00.454.650 I main: loading model: models/smolvlm2-256m.gguf
+0.00.454.920 W WARN: This is an experimental CLI for testing multimodal capability.
+0.00.454.921 W       For normal use cases, please use the standard llama-cli
+0.01.079.253 I encoding mtmd batch, n_chunks = 1 (done = 1, total = 105)
+0.01.244.804 I mtmd batch encoding done in 166 ms
+0.01.268.493 I encoding mtmd batch, n_chunks = 1 (done = 3, total = 105)
+0.01.426.461 I mtmd batch encoding done in 158 ms
+0.01.445.053 I encoding mtmd batch, n_chunks = 1 (done = 5, total = 105)
+0.01.603.512 I mtmd batch encoding done in 158 ms
+0.01.622.604 I encoding mtmd batch, n_chunks = 1 (done = 7, total = 105)
+0.01.780.352 I mtmd batch encoding done in 158 ms
+0.01.802.057 I encoding mtmd batch, n_chunks = 1 (done = 9, total = 105)
+0.01.959.949 I mtmd batch encoding done in 158 ms
+0.01.980.191 I encoding mtmd batch, n_chunks = 1 (done = 11, total = 105)
+0.02.137.968 I mtmd batch encoding done in 158 ms
+0.02.159.083 I encoding mtmd batch, n_chunks = 1 (done = 13, total = 105)
+0.02.316.810 I mtmd batch encoding done in 158 ms
+0.02.337.960 I encoding mtmd batch, n_chunks = 1 (done = 15, total = 105)
+0.02.495.723 I mtmd batch encoding done in 158 ms
+0.02.519.293 I encoding mtmd batch, n_chunks = 1 (done = 17, total = 105)
+0.02.677.111 I mtmd batch encoding done in 158 ms
+0.02.700.010 I encoding mtmd batch, n_chunks = 1 (done = 19, total = 105)
+0.02.857.715 I mtmd batch encoding done in 157 ms
+0.02.880.566 I encoding mtmd batch, n_chunks = 1 (done = 21, total = 105)
+0.03.038.496 I mtmd batch encoding done in 158 ms
+0.03.062.043 I encoding mtmd batch, n_chunks = 1 (done = 23, total = 105)
+0.03.219.961 I mtmd batch encoding done in 158 ms
+0.03.254.140 I encoding mtmd batch, n_chunks = 1 (done = 25, total = 105)
+0.03.412.592 I mtmd batch encoding done in 158 ms
+0.03.441.281 I encoding mtmd batch, n_chunks = 1 (done = 27, total = 105)
+0.03.608.725 I mtmd batch encoding done in 168 ms
+0.03.636.093 I encoding mtmd batch, n_chunks = 1 (done = 29, total = 105)
+0.03.795.772 I mtmd batch encoding done in 160 ms
+0.03.821.898 I encoding mtmd batch, n_chunks = 1 (done = 31, total = 105)
+0.03.980.333 I mtmd batch encoding done in 158 ms
+0.04.012.702 I encoding mtmd batch, n_chunks = 1 (done = 33, total = 105)
+0.04.170.457 I mtmd batch encoding done in 158 ms
+0.04.196.347 I encoding mtmd batch, n_chunks = 1 (done = 35, total = 105)
+0.04.354.113 I mtmd batch encoding done in 158 ms
+0.04.382.771 I encoding mtmd batch, n_chunks = 1 (done = 37, total = 105)
+0.04.541.946 I mtmd batch encoding done in 159 ms
+0.04.570.172 I encoding mtmd batch, n_chunks = 1 (done = 39, total = 105)
+0.04.729.142 I mtmd batch encoding done in 159 ms
+0.04.757.686 I encoding mtmd batch, n_chunks = 1 (done = 41, total = 105)
+0.04.915.435 I mtmd batch encoding done in 158 ms
+0.04.943.337 I encoding mtmd batch, n_chunks = 1 (done = 43, total = 105)
+0.05.101.251 I mtmd batch encoding done in 158 ms
+0.05.129.511 I encoding mtmd batch, n_chunks = 1 (done = 45, total = 105)
+0.05.287.448 I mtmd batch encoding done in 158 ms
+0.05.317.628 I encoding mtmd batch, n_chunks = 1 (done = 47, total = 105)
+0.05.475.498 I mtmd batch encoding done in 158 ms
+0.05.505.145 I encoding mtmd batch, n_chunks = 1 (done = 49, total = 105)
+0.05.662.949 I mtmd batch encoding done in 158 ms
+0.05.692.603 I encoding mtmd batch, n_chunks = 1 (done = 51, total = 105)
+0.05.850.524 I mtmd batch encoding done in 158 ms
+0.05.882.357 I encoding mtmd batch, n_chunks = 1 (done = 53, total = 105)
+0.06.040.199 I mtmd batch encoding done in 158 ms
+0.06.069.916 I encoding mtmd batch, n_chunks = 1 (done = 55, total = 105)
+0.06.227.725 I mtmd batch encoding done in 158 ms
+0.06.259.094 I encoding mtmd batch, n_chunks = 1 (done = 57, total = 105)
+0.06.417.020 I mtmd batch encoding done in 158 ms
+0.06.448.984 I encoding mtmd batch, n_chunks = 1 (done = 59, total = 105)
+0.06.606.928 I mtmd batch encoding done in 158 ms
+0.06.648.211 I encoding mtmd batch, n_chunks = 1 (done = 61, total = 105)
+0.06.809.028 I mtmd batch encoding done in 161 ms
+0.06.844.129 I encoding mtmd batch, n_chunks = 1 (done = 63, total = 105)
+0.07.003.108 I mtmd batch encoding done in 159 ms
+0.07.039.496 I encoding mtmd batch, n_chunks = 1 (done = 65, total = 105)
+0.07.198.604 I mtmd batch encoding done in 159 ms
+0.07.236.405 I encoding mtmd batch, n_chunks = 1 (done = 67, total = 105)
+0.07.395.438 I mtmd batch encoding done in 159 ms
+0.07.431.372 I encoding mtmd batch, n_chunks = 1 (done = 69, total = 105)
+0.07.590.620 I mtmd batch encoding done in 159 ms
+0.07.626.424 I encoding mtmd batch, n_chunks = 1 (done = 71, total = 105)
+0.07.786.095 I mtmd batch encoding done in 160 ms
+0.07.820.367 I encoding mtmd batch, n_chunks = 1 (done = 73, total = 105)
+0.07.979.007 I mtmd batch encoding done in 159 ms
+0.08.014.291 I encoding mtmd batch, n_chunks = 1 (done = 75, total = 105)
+0.08.172.978 I mtmd batch encoding done in 159 ms
+0.08.208.906 I encoding mtmd batch, n_chunks = 1 (done = 77, total = 105)
+0.08.368.334 I mtmd batch encoding done in 159 ms
+0.08.404.453 I encoding mtmd batch, n_chunks = 1 (done = 79, total = 105)
+0.08.564.110 I mtmd batch encoding done in 160 ms
+0.08.605.978 I encoding mtmd batch, n_chunks = 1 (done = 81, total = 105)
+0.08.765.698 I mtmd batch encoding done in 159 ms
+0.08.803.457 I encoding mtmd batch, n_chunks = 1 (done = 83, total = 105)
+0.08.962.275 I mtmd batch encoding done in 159 ms
+0.09.001.447 I encoding mtmd batch, n_chunks = 1 (done = 85, total = 105)
+0.09.160.198 I mtmd batch encoding done in 159 ms
+0.09.208.711 I encoding mtmd batch, n_chunks = 1 (done = 87, total = 105)
+0.09.371.147 I mtmd batch encoding done in 162 ms
+0.09.413.462 I encoding mtmd batch, n_chunks = 1 (done = 89, total = 105)
+0.09.572.738 I mtmd batch encoding done in 160 ms
+0.09.618.458 I encoding mtmd batch, n_chunks = 1 (done = 91, total = 105)
+0.09.777.437 I mtmd batch encoding done in 159 ms
+0.09.821.257 I encoding mtmd batch, n_chunks = 1 (done = 93, total = 105)
+0.09.980.108 I mtmd batch encoding done in 159 ms
+0.10.023.309 I encoding mtmd batch, n_chunks = 1 (done = 95, total = 105)
+0.10.183.097 I mtmd batch encoding done in 160 ms
+0.10.226.991 I encoding mtmd batch, n_chunks = 1 (done = 97, total = 105)
+0.10.386.163 I mtmd batch encoding done in 159 ms
+0.10.432.680 I encoding mtmd batch, n_chunks = 1 (done = 99, total = 105)
+0.10.592.085 I mtmd batch encoding done in 160 ms
+0.10.641.503 I encoding mtmd batch, n_chunks = 1 (done = 101, total = 105)
+0.10.800.940 I mtmd batch encoding done in 160 ms
+0.10.848.063 I encoding mtmd batch, n_chunks = 1 (done = 103, total = 105)
+0.11.007.956 I mtmd batch encoding done in 160 ms
+
+ In the image, a black puppy is the main subject. The puppy is lying on a wooden surface, which appears to be a deck or a wooden floor. The puppy is facing the camera, giving a sense of curiosity and attention to the
+

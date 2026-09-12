@@ -1,0 +1,13 @@
+0.00.738.400 W load: control-looking token: 128247 '</s>' was not control-type; this is probably a bug in the model. its type will be overridden
+0.00.783.766 W load: special_eos_id is not in special_eog_ids - the tokenizer config may be incorrect
+0.01.144.280 I cmn          init: llama threadpool init, n_threads = 2
+0.01.407.256 W init_audio: audio input is in experimental stage and may have reduced quality:
+    https://github.com/ggml-org/llama.cpp/discussions/13759
+0.02.185.729 W init: embeddings required but some input tokens were not marked as outputs -> overriding
+0.04.315.629 I frames generated: 9, speed: 4.42 frames/s
+0.06.351.675 I frames generated: 48, speed: 11.78 frames/s
+0.12.966.041 I frames generated: 72, speed: 6.74 frames/s
+0.14.009.938 I generated 80 frames, 307244 bytes of WAV audio (24000 Hz)
+0.14.009.947 I timings: prompt eval 0.09s + generation 11.09s + vocoder 0.64s = total 11.82s
+0.14.009.947 I          output audio = 6.40s (audio time = 0.54x process time)
+0.14.010.216 I wrote models/omni/out/tts-smoke.wav

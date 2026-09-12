@@ -1,0 +1,32 @@
+name: fluxer-platform
+label: Fluxer
+kind: platform
+version: 1.0.0
+description: >
+  Fluxer gateway adapter for Hermes Agent.
+  Connects to Fluxer (fluxer.app) and relays messages between Fluxer
+  guilds/DMs and the Hermes agent. Text first; attachments, voice and video
+  build on the same omnimodal engine seams.
+author: NousResearch
+requires_env:
+  - name: FLUXER_BOT_TOKEN
+    description: "Fluxer bot token (id.secret)"
+    prompt: "Fluxer bot token"
+    password: true
+optional_env:
+  - name: FLUXER_ALLOWED_USERS
+    description: "Comma-separated Fluxer user IDs allowed to talk to the bot"
+    prompt: "Allowed users (comma-separated)"
+    password: false
+  - name: FLUXER_ALLOW_ALL_USERS
+    description: "Allow any Fluxer user to trigger the bot (dev only)"
+    prompt: "Allow all users? (true/false)"
+    password: false
+  - name: FLUXER_HOME_CHANNEL
+    description: "Default channel ID for cron / notification delivery"
+    prompt: "Home channel ID"
+    password: false
+  - name: FLUXER_HOME_CHANNEL_NAME
+    description: "Display name for the Fluxer home channel"
+    prompt: "Home channel display name"
+    password: false
