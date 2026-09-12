@@ -69,6 +69,14 @@ class OmniAdapterMixin:
         except Exception as exc:
             logger.debug("Fluxer: CrispASR streaming backend not available (%s)", exc)
 
+        # Register the Kokoro TTS backend (CPU, lightweight, through CrispASR)
+        try:
+            from hermes_omni.backends.crispasr import CrispAsrTtsBackend
+            register_backend("local.kokoro", CrispAsrTtsBackend, kind="sense")
+            logger.info("Fluxer: registered Kokoro TTS backend")
+        except Exception as exc:
+            logger.debug("Fluxer: Kokoro TTS backend not available (%s)", exc)
+
         profile_name = omni_cfg.get("default_profile", "glados-test")
         profile_spec = omni_cfg.get("profiles", {}).get(profile_name, {})
         self._omni_profile = parse_component_config(profile_name, profile_spec)
