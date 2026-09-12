@@ -40,9 +40,12 @@ class OmniAdapterMixin:
         an omni section and hermes_omni is importable.  Resolves the
         default profile, validates every binding, creates a Session.
         """
-        from hermes_omni import register_builtin_backends, register_backend, resolve_profile
+        from hermes_omni import register_builtin_backends, register_backend
+        from hermes_omni.profiles import detect_config_version as detect_v1
+        from hermes_omni.engine.graph import detect_config_version as detect_v2, parse_component_config
 
         register_builtin_backends()
+        # Register the torch Mini-Omni2 duplex backend for unified profiles
         # Register the torch Mini-Omni2 duplex backend for unified profiles
         try:
             from hermes_omni.backends.miniomni2 import MiniOmni2DuplexBackend
@@ -68,13 +71,26 @@ class OmniAdapterMixin:
             logger.debug("Fluxer: CrispASR streaming backend not available (%s)", exc)
 
         profile_name = omni_cfg.get("default_profile", "split-local")
-        self._omni_profile = resolve_profile(omni_cfg, name=profile_name)
-        logger.info(
-            "Fluxer: omni profile %r resolved (mode=%s, slots=%s)",
-            profile_name,
-            self._omni_profile.mode,
-            list(self._omni_profile.bindings.keys()),
-        )
+        profile_spec = omni_cfg.get("profiles", {}).get(profile_name, {})
+        ver = detect_v2(profile_spec)
+        if ver == "v2":
+            from hermes_omni.engine.graph import parse_component_config
+            self._omni_profile = parse_component_config(profile_name, profile_spec)
+            logger.info(
+                "Fluxer: omni v2 profile %r resolved (mode=%s, components=%s)",
+                profile_name,
+                self._omni_profile.graph.infer_profile_mode(),
+                list(self._omni_profile.graph.component_names()),
+            )
+        else:
+            from hermes_omni.profiles import resolve_profile
+            self._omni_profile = resolve_profile(omni_cfg, name=profile_name)
+            logger.info(
+                "Fluxer: omni v1 profile %r resolved (mode=%s, slots=%s)",
+                profile_name,
+                self._omni_profile.mode,
+                list(self._omni_profile.bindings.keys()),
+            )
         from hermes_omni.session import Session
 
         self._omni_session = Session(self._omni_profile)
