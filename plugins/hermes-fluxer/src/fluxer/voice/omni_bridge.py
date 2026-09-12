@@ -82,6 +82,9 @@ class OmniVoiceBridge:
         self._output_source: Any = None
         self._output_buffer = array.array("h")
 
+        # Graph mode detection
+        self._graph_mode = None  # lazy-detect
+
         # Transcript dispatch — speaker context from the most recent mic track
         self._speaker_id: Optional[str] = None
         self._speaker_name: Optional[str] = None
@@ -132,11 +135,14 @@ class OmniVoiceBridge:
         * Scan the room for existing participants (missed
           ``track_subscribed`` events from before the bridge started).
         """
-        # 1. Start the omni Session (wires FSM callbacks)
+        # 1. Start the omni Session (wires FSM callbacks or graph routes)
         if not self.session._running:
             await self.session.start()
-        # 2. Hook transcript delivery
-        self._hook_fsm()
+        # 2. Hook transcript delivery (FSM or graph)
+        if self._is_graph_mode():
+            self._hook_graph()
+        else:
+            self._hook_fsm()
         # 3. Output pipeline
         self._spawn(self._run_output())
         # 4. Unified streaming mode — open persistent session (await so
@@ -194,7 +200,7 @@ class OmniVoiceBridge:
         task.add_done_callback(self._tasks.discard)
         return task
 
-    # ── FSM hooking ──────────────────────────────────────────────────────────
+    # ── FSM / graph hooking ──────────────────────────────────────────────
 
     def _hook_fsm(self) -> None:
         """Wrap the FSM's ``on_transcript_ready`` so the bridge can deliver
@@ -204,6 +210,8 @@ class OmniVoiceBridge:
         :meth:`~hermes_omni.session.Session.start`.  We keep the original
         (which feeds the transcript into the thinker backend / TTS pipeline)
         and add our own delivery step before it.
+
+        Used for v1 (ResolvedProfile) sessions only.
         """
         fsm = self._fsm
         _orig = fsm.on_transcript_ready
@@ -216,6 +224,34 @@ class OmniVoiceBridge:
                 await _orig(text)
 
         fsm.on_transcript_ready = _wrapped
+
+    def _hook_graph(self) -> None:
+        """Hook the session's graph-mode transcript callback so the bridge
+        can deliver transcripts to the adapter.
+
+        Sets ``session._graph_transcript_callback`` — the session calls it
+        from :meth:`finalize_utterance` when a transcript is ready in graph
+        mode.
+
+        Used for v2 (ComponentGraphProfile) sessions only.
+        """
+        async def _on_graph_transcript(text: str) -> None:
+            await self._deliver_transcript(text)
+
+        self.session._graph_transcript_callback = _on_graph_transcript
+
+    def _is_graph_mode(self) -> bool:
+        """``True`` when the session is backed by a component graph (v2)."""
+        if self._graph_mode is None:
+            try:
+                from hermes_omni.engine.graph import ComponentGraphProfile
+                self._graph_mode = isinstance(
+                    getattr(self.session, "profile", None),
+                    ComponentGraphProfile,
+                )
+            except ImportError:
+                self._graph_mode = False
+        return self._graph_mode
 
     # ── inbound: LiveKit mic → VAD → session.feed_audio() ───────────────────
 
@@ -326,16 +362,25 @@ class OmniVoiceBridge:
     # ── VAD ─────────────────────────────────────────────────────────────────
 
     async def _on_vad_open(self) -> None:
-        """Speech started — drive FSM transition.
+        """Speech started — drive FSM transition (v1) or log (graph).
 
+        V1 mode:
         * IDLE → ``trigger_vad_open()`` → LISTENING (normal).
         * SPEAKING → ``trigger_interruption()`` → PREEMPTING → LISTENING (barge-in).
-        * Other states → no-op (already listening, analysing, or preempting).
+        * Other states → no-op.
+
+        Graph mode (v2):
+        Audio is already flowing via ``feed_audio`` — just log the event.
         """
+        self.stats["vad_opens"] += 1
+
+        if self._is_graph_mode():
+            log.debug("Graph VAD open (audio already flowing)")
+            return
+
         from hermes_omni.session import SessionState
 
         state = self._fsm.state
-        self.stats["vad_opens"] += 1
 
         if state is SessionState.IDLE:
             await self._safe_trigger(self._fsm.trigger_vad_open)
@@ -361,16 +406,33 @@ class OmniVoiceBridge:
     async def _on_vad_close(self) -> None:
         """Speech ended — close the listen cycle.
 
+        V1 mode:
         LISTENING → ``trigger_vad_close()`` → ANALYZING.
         In unified streaming mode the backend already received all PCM
         chunks via ``feed_audio``, so this merely advances the FSM state.
         For the torch Mini-Omni2 backend, ``flush()`` is also called so
         the buffered PCM triggers inference.
+
+        Graph mode (v2):
+        Calls ``session.finalize_utterance()`` which signals end-of-stream
+        to the ASR backend, waits for the transcript, and delivers it via
+        the graph transcript callback (hooked by ``_hook_graph``).
         """
+        self.stats["vad_closes"] += 1
+
+        if self._is_graph_mode():
+            await self.session.finalize_utterance()
+            # Flush the streaming session if present
+            if (
+                self._stream_session is not None
+                and hasattr(self._stream_session, "flush")
+            ):
+                await self._safe_flush(self._stream_session)
+            return
+
         from hermes_omni.session import SessionState
 
         state = self._fsm.state
-        self.stats["vad_closes"] += 1
 
         if state is SessionState.LISTENING:
             await self._safe_trigger(self._fsm.trigger_vad_close)
