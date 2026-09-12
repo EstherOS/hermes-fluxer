@@ -17,8 +17,8 @@ from hermes_omni import (
     BackendNotConfigured,
     OmniError,
     Part,
-    ResolvedProfile,
 )
+from hermes_omni.profiles import ResolvedProfile
 from hermes_omni.profiles.cascade import Cascade, CascadeSession, _coerce_parts, duplex_session
 
 # ── Fake backends ──────────────────────────────────────────────────────────────
@@ -51,7 +51,7 @@ def _catalog(fakes: dict):
 
 def _stitched(*slots: str) -> ResolvedProfile:
     """Build a minimal stitched ResolvedProfile for the given slot names."""
-    from hermes_omni import parse_profile
+    from hermes_omni.profiles import parse_profile
 
     bindings = {slot: {"backend": f"fake.{slot.replace('_', '')}"} for slot in slots}
     return parse_profile("fake", {"mode": "stitched", "bindings": bindings}, backend_kinds=None)
@@ -198,7 +198,7 @@ async def test_cascade_backend_process_error() -> None:
 @pytest.mark.asyncio
 async def test_cascade_rejects_unified_profile() -> None:
     """Cascade constructor raises OmniError for a unified profile."""
-    from hermes_omni import parse_profile
+    from hermes_omni.profiles import parse_profile
 
     prof = parse_profile(
         "u",
@@ -270,7 +270,7 @@ async def test_duplex_session_helper_stitched() -> None:
 @pytest.mark.asyncio
 async def test_duplex_session_helper_unified_raises() -> None:
     """duplex_session() with a unified placeholder raises BackendNotConfigured."""
-    from hermes_omni import parse_profile
+    from hermes_omni.profiles import parse_profile
 
     prof = parse_profile(
         "u",

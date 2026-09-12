@@ -20,11 +20,12 @@ logger = logging.getLogger(__name__)
 
 
 class OmniAdapterMixin:
-    """Mixin that adds hermes-omni profile loading and STT/TTS dispatch.
+    """Mixin that adds hermes-omni v2 (component-graph) profile loading
+    and STT/TTS dispatch.
 
     Expected instance attributes (set by FluxerAdapter.__init__):
         _omni_cfg: dict | None      — omni section from Hermes config
-        _omni_profile: Any | None   — resolved profile
+        _omni_profile: Any | None   — resolved v2 profile (ComponentGraphProfile)
         _omni_session: Any | None   — hermes_omni.session.Session
     """
 
@@ -34,18 +35,16 @@ class OmniAdapterMixin:
     _omni_session: Any | None = None
 
     def _init_omni_backends(self, omni_cfg: dict) -> None:
-        """Wire hermes-omni from the ``omni:`` config section.
+        """Wire hermes-omni from the ``omni:`` config section (v2 component graph only).
 
         Called once from the adapter's __init__ when the config has
         an omni section and hermes_omni is importable.  Resolves the
-        default profile, validates every binding, creates a Session.
+        default v2 profile, creates a Session.
         """
-        from hermes_omni import register_builtin_backends, register_backend
-        from hermes_omni.profiles import detect_config_version as detect_v1
-        from hermes_omni.engine.graph import detect_config_version as detect_v2, parse_component_config
+        from hermes_omni import register_backend, register_builtin_backends
+        from hermes_omni.engine.graph import parse_component_config
 
         register_builtin_backends()
-        # Register the torch Mini-Omni2 duplex backend for unified profiles
         # Register the torch Mini-Omni2 duplex backend for unified profiles
         try:
             from hermes_omni.backends.miniomni2 import MiniOmni2DuplexBackend
@@ -70,27 +69,16 @@ class OmniAdapterMixin:
         except Exception as exc:
             logger.debug("Fluxer: CrispASR streaming backend not available (%s)", exc)
 
-        profile_name = omni_cfg.get("default_profile", "split-local")
+        profile_name = omni_cfg.get("default_profile", "glados-test")
         profile_spec = omni_cfg.get("profiles", {}).get(profile_name, {})
-        ver = detect_v2(profile_spec)
-        if ver == "v2":
-            from hermes_omni.engine.graph import parse_component_config
-            self._omni_profile = parse_component_config(profile_name, profile_spec)
-            logger.info(
-                "Fluxer: omni v2 profile %r resolved (mode=%s, components=%s)",
-                profile_name,
-                self._omni_profile.graph.infer_profile_mode(),
-                list(self._omni_profile.graph.component_names()),
-            )
-        else:
-            from hermes_omni.profiles import resolve_profile
-            self._omni_profile = resolve_profile(omni_cfg, name=profile_name)
-            logger.info(
-                "Fluxer: omni v1 profile %r resolved (mode=%s, slots=%s)",
-                profile_name,
-                self._omni_profile.mode,
-                list(self._omni_profile.bindings.keys()),
-            )
+        self._omni_profile = parse_component_config(profile_name, profile_spec)
+        logger.info(
+            "Fluxer: omni v2 profile %r resolved (mode=%s, components=%s)",
+            profile_name,
+            self._omni_profile.graph.infer_profile_mode(),
+            list(self._omni_profile.graph.component_names()),
+        )
+
         from hermes_omni.session import Session
 
         self._omni_session = Session(self._omni_profile)
@@ -99,14 +87,14 @@ class OmniAdapterMixin:
     def _omni_synthesize(self, text: str) -> bytes | None:
         """Synthesize speech via hermes-omni; returns WAV bytes or None.
 
-        Uses the session's ``_audio_out`` backend — for v1 this is the
-        resolved audio_out slot; for v2 (graph) this is the backend of
-        the component that sends ``audio: [user]``.
+        Uses the session's ``_component_backends`` to find the mouth
+        component's ``audio_out`` backend.
         """
         if self._omni_session is None:
             return None
         try:
-            audio_out = self._omni_session._audio_out
+            mouth = self._omni_session._component_backends.get("mouth", {})
+            audio_out = mouth.get("audio_out")
             if audio_out is not None:
                 from hermes_omni.backends.adapters import AudioOutFromSenseBackend
 
@@ -122,14 +110,14 @@ class OmniAdapterMixin:
     def _omni_transcribe(self, wav_bytes: bytes) -> str | None:
         """Transcribe audio via hermes-omni; returns text or None.
 
-        Uses the session's ``_audio_in`` backend — for v1 this is the
-        resolved audio_in slot; for v2 (graph) this is the backend of
-        the component that receives ``audio: [user]``.
+        Uses the session's ``_component_backends`` to find the ears
+        component's ``audio_in`` backend.
         """
         if self._omni_session is None:
             return None
         try:
-            audio_in = self._omni_session._audio_in
+            ears = self._omni_session._component_backends.get("ears", {})
+            audio_in = ears.get("audio_in")
             if audio_in is not None:
                 from hermes_omni.backends.adapters import AudioInFromSenseBackend
 

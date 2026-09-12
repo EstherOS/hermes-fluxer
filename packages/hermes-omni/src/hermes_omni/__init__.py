@@ -1,17 +1,40 @@
 """
-hermes-omni — Realtime/omni engine for Hermes Agent.
+hermes-omni — Realtime/omni engine for Hermes Agent (v2 / component graph only).
 
-Role-tagged multimodal backends, profile composition, session FSM,
-cancellation protocol, and transport-agnostic realtime audio/video pipeline.
+Role-tagged multimodal backends, component-graph profiles,
+and transport-agnostic realtime audio/video pipeline.
 
 Usage:
-    from hermes_omni import Profile, Session
-    profile = Profile.from_config(yaml_data)
+    from hermes_omni import ComponentGraphProfile, Session
+    profile = parse_component_config(name, spec)
     session = Session(profile)
     await session.start()
 """
 
+from .backends.registry import (
+    backend_catalog,
+    get_backend,
+    list_backends,
+    register_backend,
+    register_builtin_backends,
+    unregister_backend,
+)
+from .engine.graph import (
+    ComponentGraph,
+    ComponentGraphProfile,
+    PushRoute,
+    parse_component_config,
+)
+from .profiles.cascade import Cascade, CascadeSession, duplex_session
+from .session import (
+    CancellableMixin,
+    FallbackChain,
+    PreBufferRing,
+    Session,
+)
+from .session.thinker_bridge import BridgeResult, ThinkerBridge
 from .types import (
+    SLOTS,
     AudioIn,
     AudioOut,
     BackendError,
@@ -28,46 +51,15 @@ from .types import (
     Sense,
     SenseBackend,
     SenseBinding,
-    SLOTS,
     Text,
     UncancelableError,
     Vision,
     is_slot,
     slot_name,
 )
-from .backends.registry import (
-    backend_catalog,
-    get_backend,
-    list_backends,
-    register_backend,
-    register_builtin_backends,
-    unregister_backend,
-)
-from .engine.graph import (
-    ComponentGraph,
-    ComponentGraphProfile,
-    PushRoute,
-)
-from .profiles import (
-    DEFAULT_PROFILE_NAME,
-    DEFAULT_PROFILE_SPEC,
-    ResolvedProfile,
-    parse_profile,
-    resolve_profile,
-)
-from .profiles.cascade import Cascade, CascadeSession, duplex_session
-from .session import (
-    BridgeResult,
-    CancellableMixin,
-    FallbackChain,
-    PreBufferRing,
-    Session,
-    SessionFSM,
-    SessionState,
-    ThinkerBridge,
-)
 
 __all__ = [
+    "SLOTS",
     "AudioIn",
     "AudioOut",
     "BackendError",
@@ -79,8 +71,6 @@ __all__ = [
     "CascadeSession",
     "ComponentGraph",
     "ComponentGraphProfile",
-    "DEFAULT_PROFILE_NAME",
-    "DEFAULT_PROFILE_SPEC",
     "Direction",
     "DuplexBackend",
     "DuplexSession",
@@ -92,14 +82,10 @@ __all__ = [
     "ProfileError",
     "PushRoute",
     "Realtime",
-    "ResolvedProfile",
     "Sense",
     "SenseBackend",
     "SenseBinding",
     "Session",
-    "SessionFSM",
-    "SessionState",
-    "SLOTS",
     "Text",
     "ThinkerBridge",
     "UncancelableError",
@@ -109,10 +95,9 @@ __all__ = [
     "get_backend",
     "is_slot",
     "list_backends",
-    "parse_profile",
+    "parse_component_config",
     "register_backend",
     "register_builtin_backends",
-    "resolve_profile",
     "slot_name",
     "unregister_backend",
 ]

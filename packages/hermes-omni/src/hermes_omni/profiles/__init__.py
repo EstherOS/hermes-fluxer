@@ -1,94 +1,56 @@
-"""Profile parsing for the fluxer omni engine (spec §6, wave 4).
-
-A profile is the config-level statement of "which backend serves which
-sense".  Two modes:
-
-``stitched``
-    One binding per slot, e.g. ``audio_in: local.whispercpp`` +
-    ``audio_out: local.piper`` — the verified cascade on this box
-    (``docs/omni-models-feasibility.md`` §2/§5 phase 0).
-
-``unified``
-    One backend (a single god model) + the senses it serves, e.g.
-    ``{mode: unified, backend: null_duplex, senses: [text, audio, image, video]}``.
-    Nothing implements one on 6 GB yet — see
-    :data:`hermes_omni.types.UNIFIED_CONFIG_EXAMPLE` for the shape a future
-    model should be wired with.
+"""Profile parsing for the fluxer omni engine (spec §6, wave 4) — v2 / component graph only.
 
 Config shape (``cfg.extra`` on the adapter side)::
 
     omni:
-      default_profile: local-stitched        # optional
+      default_profile: glados-test
       profiles:
-        local-stitched:
-          mode: stitched
-          bindings:
-            audio_in:  {backend: local.whispercpp}
-            audio_out: {backend: local.piper}
-            text_out:  {backend: agent}      # documents the thinker seam
-        unified-future:
-          mode: unified
-          backend: null_duplex
-          senses: [text, audio, image, video]
-
-Bindings accept the ``"local.piper"`` string shorthand or the full mapping.
-Validation is strict about typos (unknown slot keys get a did-you-mean);
-unknown *spec* keys are warnings so unrelated voice config can ride along.
+        glados-test:
+          components:
+            ears:
+              ins: {audio: [user]}
+              outs: {text: [brain]}
+            brain:
+              ins: {text: [ears]}
+              outs: {text: [mouth]}
+              tools: {harness: core}
+            mouth:
+              ins: {text: [brain]}
+              outs: {audio: [user]}
 """
 
 from __future__ import annotations
 
-import difflib
-from dataclasses import dataclass, field
-from typing import Any, Mapping, Sequence
-
-from ..types import (
-    BackendNotConfigured,
-    Part,
-    ProfileError,
-    Sense,
-    SenseBinding,
-    SLOTS,
-    is_slot,
-    slot_name,
-)
 from ..engine.graph import (
     ComponentGraph,
     ComponentGraphProfile,
-    detect_config_version,
     parse_component_config,
 )
 
 __all__ = [
-    "ResolvedProfile",
     "ComponentGraph",
     "ComponentGraphProfile",
-    "resolve_profile",
-    "parse_profile",
     "parse_component_config",
-    "detect_config_version",
-    "omni_section",
-    "DEFAULT_PROFILE_NAME",
-    "DEFAULT_PROFILE_SPEC",
 ]
 
-#: Name of the builtin fallback profile used when no ``omni`` config exists.
-DEFAULT_PROFILE_NAME = "local-stitched"
+# ── Internal legacy compat (for Cascade / ThinkerBridge) ──────────────────────
+# These are kept as private imports so the old turn-based cascade and thinker
+# bridge can still be used while the public API exports only v2.
 
-#: The builtin fallback: exactly the backends verified on this box (doc §2).
-DEFAULT_PROFILE_SPEC: dict[str, Any] = {
-    "mode": "stitched",
-    "bindings": {
-        "text_out": {"backend": "agent"},
-        "image_in": {"backend": "local.smolvlm"},
-        "audio_in": {"backend": "local.whispercpp"},
-        "audio_out": {"backend": "local.piper"},
-        "video_in": {"backend": "local.smolvlm_video"},
-        "video_out": {"backend": "local.render"},
-    },
-}
+from collections.abc import Mapping, Sequence
+from dataclasses import dataclass, field
+from difflib import get_close_matches
+from typing import Any
 
-_KNOWN_SPEC_KEYS = {"mode", "bindings", "backend", "senses", "options"}
+from ..types import (
+    SLOTS,
+    BackendNotConfigured,
+    ProfileError,
+    Sense,
+    SenseBinding,
+    is_slot,
+    slot_name,
+)
 
 
 @dataclass
@@ -128,6 +90,25 @@ class ResolvedProfile:
         return binding
 
 
+#: Name of the builtin fallback profile used when no ``omni`` config exists.
+DEFAULT_PROFILE_NAME = "local-stitched"
+
+#: The builtin fallback: exactly the backends verified on this box.
+DEFAULT_PROFILE_SPEC: dict[str, Any] = {
+    "mode": "stitched",
+    "bindings": {
+        "text_out": {"backend": "agent"},
+        "image_in": {"backend": "local.smolvlm"},
+        "audio_in": {"backend": "local.whispercpp"},
+        "audio_out": {"backend": "local.piper"},
+        "video_in": {"backend": "local.smolvlm_video"},
+        "video_out": {"backend": "local.render"},
+    },
+}
+
+_KNOWN_SPEC_KEYS = {"mode", "bindings", "backend", "senses", "options"}
+
+
 def omni_section(cfg: Mapping[str, Any] | None) -> dict[str, Any]:
     """Pull the ``omni`` section out of a config mapping (tolerates both shapes)."""
     if not cfg:
@@ -141,7 +122,7 @@ def omni_section(cfg: Mapping[str, Any] | None) -> dict[str, Any]:
 
 
 def _did_you_mean(key: str, candidates: Sequence[str]) -> str:
-    close = difflib.get_close_matches(str(key), list(candidates), n=1, cutoff=0.6)
+    close = get_close_matches(str(key), list(candidates), n=1, cutoff=0.6)
     return f" (did you mean {close[0]!r}?)" if close else ""
 
 
@@ -153,8 +134,8 @@ def _normalize_senses(values: Any) -> tuple[str, ...]:
     out: list[str] = []
     for value in values:
         text = str(value).strip().lower()
-        text = text[: -len("_in")] if text.endswith("_in") else text
-        text = text[: -len("_out")] if text.endswith("_out") else text
+        text = text.removesuffix("_in")
+        text = text.removesuffix("_out")
         if text not in valid:
             raise ProfileError([f"unknown sense {value!r}; expected one of {sorted(valid)}"])
         if text not in out:
@@ -285,10 +266,10 @@ def resolve_profile(
     profiles = section.get("profiles") or {}
     if not isinstance(profiles, Mapping):
         raise ProfileError(["'omni.profiless' must be a mapping"])
-    # tolerate 'omni:' without 'profiles:' by treating the section itself as specs? no —
-    # section-level keys are default_profile/profiles only; unknown ones warn below.
     if backend_kinds is None:
-        from ..backends.registry import backend_catalog  # lazy: avoids a profile→registry import at load
+        from ..backends.registry import (
+            backend_catalog,  # lazy: avoids a profile→registry import at load
+        )
 
         backend_kinds = backend_catalog()
 
@@ -311,7 +292,7 @@ def resolve_profile(
                     profile = _builtin_fallback(backend_kinds)
                     profile.warnings.extend(section_warnings)
                     return profile
-                raise ProfileError([f"no such profile (no profiles configured)"], profile=name)
+                raise ProfileError(["no such profile (no profiles configured)"], profile=name)
             raise ProfileError(
                 [f"no such profile; available: {sorted(str(k) for k in profiles)}"], profile=name
             )

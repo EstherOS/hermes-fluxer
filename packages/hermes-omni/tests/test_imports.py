@@ -1,5 +1,6 @@
 """Test that hermes_omni can be imported, key types instantiated, and the registry
-works with a minimal profile parse.  Prints a summary of all exported names."""
+works with a minimal v2 profile parse.  Prints a summary of all exported names.
+"""
 
 from __future__ import annotations
 
@@ -80,28 +81,21 @@ def test_registry_register_and_retrieve() -> None:
     assert "test.dummy" not in hermes_omni.list_backends()
 
 
-def test_minimal_profile_parse() -> None:
-    """A minimal stitched profile can be parsed without a catalog."""
-    rp = hermes_omni.parse_profile(
+def test_minimal_v2_profile_parse() -> None:
+    """A minimal v2 component-graph profile can be parsed."""
+    from hermes_omni.engine.graph import parse_component_config
+
+    rp = parse_component_config(
         "test",
-        {"mode": "stitched", "bindings": {"audio_in": "local.whispercpp"}},
-        backend_kinds=None,
+        {
+            "components": {
+                "ears": {"ins": {"audio": ["user"]}},
+            },
+        },
     )
     assert rp.name == "test"
-    assert rp.mode == "stitched"
-    assert rp.binding("audio_in").backend == "local.whispercpp"
-
-
-def test_session_state_enum() -> None:
-    """All expected SessionState values exist."""
-    assert hermes_omni.SessionState.IDLE.name == "IDLE"
-    assert hermes_omni.SessionState.LISTENING.name == "LISTENING"
-    assert hermes_omni.SessionState.ANALYZING.name == "ANALYZING"
-    assert hermes_omni.SessionState.THINKING.name == "THINKING"
-    assert hermes_omni.SessionState.SPEAKING.name == "SPEAKING"
-    assert hermes_omni.SessionState.PREEMPTING.name == "PREEMPTING"
-    assert hermes_omni.SessionState.HALTED.name == "HALTED"
-    assert len(hermes_omni.SessionState) == 7
+    assert isinstance(rp, hermes_omni.ComponentGraphProfile)
+    assert "ears" in rp.graph.component_names()
 
 
 def test_print_summary(capsys) -> None:
@@ -115,4 +109,25 @@ def test_print_summary(capsys) -> None:
         print(f"  {n}: {type(obj).__name__}")
     captured = capsys.readouterr()
     assert "Part" in captured.out
-    assert "SessionState" in captured.out
+    assert "ComponentGraphProfile" in captured.out
+
+
+def test_parse_component_config_exported() -> None:
+    """parse_component_config is importable from hermes_omni."""
+    from hermes_omni import parse_component_config
+
+    assert callable(parse_component_config)
+
+
+def test_component_graph_profile_exported() -> None:
+    """ComponentGraphProfile is importable from hermes_omni."""
+    from hermes_omni import ComponentGraphProfile
+
+    assert ComponentGraphProfile is not None
+
+
+def test_session_cancellable_mixin_importable() -> None:
+    """CancellableMixin is still importable from hermes_omni.session."""
+    from hermes_omni.session import CancellableMixin
+
+    assert CancellableMixin is not None

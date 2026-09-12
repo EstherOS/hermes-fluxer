@@ -19,10 +19,9 @@ from hermes_omni import (
     BridgeResult,
     OmniError,
     Part,
-    ResolvedProfile,
     ThinkerBridge,
-    parse_profile,
 )
+from hermes_omni.profiles import ResolvedProfile, parse_profile
 from hermes_omni.types import Text
 
 

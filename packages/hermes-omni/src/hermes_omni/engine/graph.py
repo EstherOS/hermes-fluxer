@@ -28,7 +28,6 @@ __all__ = [
     "ComponentGraphProfile",
     "EdgeProperties",
     "PushRoute",
-    "detect_config_version",
     "parse_component_config",
 ]
 
@@ -395,16 +394,6 @@ class ComponentGraphProfile:
 # ── config parsing ───────────────────────────────────────────────────────────
 
 
-def detect_config_version(spec: Mapping[str, Any]) -> str:
-    """Return ``\"v1\"`` (mode/bindings) or ``\"v2\"`` (components).
-
-    The presence of a ``components`` key at the profile level determines v2.
-    """
-    if not isinstance(spec, Mapping):
-        return "v1"
-    if "components" in spec:
-        return "v2"
-    return "v1"
 
 
 def _normalize_single_model_shorthand(name: str, spec: Any) -> dict[str, Any]:
