@@ -22,6 +22,7 @@ import inspect
 import logging
 import os
 import shutil
+import socket
 import subprocess
 import tempfile
 import time
