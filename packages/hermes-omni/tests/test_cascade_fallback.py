@@ -92,7 +92,7 @@ def _profile(
     fallback: list[str] | None = None,
 ) -> object:
     """Build a minimal :class:`ResolvedProfile` with one binding."""
-    from hermes_omni import parse_profile
+    from hermes_omni.profiles import parse_profile
 
     binding: dict[str, object] = {"backend": backend}
     if fallback:
@@ -288,7 +288,7 @@ class TestSenseBindingFallback:
 
     def test_fallback_round_trip_through_profile(self) -> None:
         """Parsing a profile with fallback populates SenseBinding.fallback."""
-        from hermes_omni import parse_profile
+        from hermes_omni.profiles import parse_profile
 
         spec = {
             "mode": "stitched",
