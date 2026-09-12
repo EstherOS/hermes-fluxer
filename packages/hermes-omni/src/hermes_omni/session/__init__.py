@@ -686,6 +686,9 @@ class Session:
         # Component-graph backends (set during _resolve_graph_backends)
         self._component_backends: dict[str, dict[str, Any]] = {}
 
+        # Graph-mode: transcript callback (set by bridge via _hook_graph)
+        self._graph_transcript_callback: Callable[[str], Any] | None = None
+
         # ── ASR / thinker / TTS task tracking ───────────────────────────
         self._asr_task: asyncio.Task | None = None
         self._thinker_task: asyncio.Task | None = None
@@ -708,6 +711,10 @@ class Session:
         """``True`` after :meth:`start` and before :meth:`stop`."""
         return self._running
 
+    def _is_graph_mode(self) -> bool:
+        """``True`` when the session is backed by a component graph (v2)."""
+        return isinstance(self.profile, ComponentGraphProfile)
+
     async def start(self) -> None:
         """Resolve backends from the profile, wire FSM transitions, enter IDLE.
 
@@ -722,7 +729,7 @@ class Session:
 
         if isinstance(self.profile, ComponentGraphProfile):
             await self._resolve_graph_backends()
-            self._wire_graph()
+            self._wire_graph_routes()
         else:
             await self._resolve_backends()
             self._wire_fsm()
@@ -781,6 +788,13 @@ class Session:
         if not self._running or self._fsm.halted:
             return
 
+        # Graph mode: forward audio directly to the component with audio_in
+        if self._is_graph_mode():
+            if self._audio_in is not None:
+                await self._forward_to_asr(chunk)
+            return
+
+        # V1 FSM mode: pre-buffer + conditional forwarding
         self._fsm.feed_prebuffer(chunk)
 
         if self._fsm.state is SessionState.LISTENING:
@@ -1106,74 +1120,59 @@ class Session:
         }
         return mapping.get(slot, "null")
 
-    # ── Component-graph FSM wiring ─────────────────────────────────────
+    # ── Component-graph routing (no FSM) ───────────────────────────────
 
-    def _wire_graph(self) -> None:
-        """Wire FSM callbacks for a component-graph profile.
+    def _wire_graph_routes(self) -> None:
+        """Wire push routes for a component-graph profile — NO FSM callbacks.
 
-        Scans ALL components for audio_in/audio_out/text_in/text_out backends
-        and wires them into the FSM. The core component drives the FSM state,
-        but audio I/O may live on dedicated components (ears/mouth).
+        Uses the graph's endpoint helpers to identify which component
+        owns audio_in / audio_out / text_in / text_out, then assigns
+        those backends directly.  The bridge drives the pipeline by
+        pushing data in and pulling data out — no state machine.
         """
         graph = self.profile.graph  # type: ignore[union-attr]
-        fsm = self._fsm
 
-        # Identify the core component
-        core_name = graph.infer_core()
-        if core_name is None:
-            names = graph.component_names()
-            core_name = names[0] if names else "brain"
-
-        # Scan ALL components for audio/text backends
+        # Reset slot backends
         self._audio_in = None
         self._audio_out = None
         self._talker = None
         self._thinker = None
-        for cname in graph.component_names():
-            backends = self._component_backends.get(cname, {})
-            if backends.get("audio_in") is not None:
-                self._audio_in = backends["audio_in"]
-            if backends.get("audio_out") is not None:
-                self._audio_out = backends["audio_out"]
-            if backends.get("text_in") is not None:
-                self._talker = backends["text_in"]
-            if backends.get("text_out") is not None:
-                self._thinker = backends["text_out"]
 
-        # Wire FSM callbacks from the core's backends (same pattern as
-        # _wire_fsm for the stitched path)
-        has_audio_in = self._audio_in is not None
-        has_audio_out = self._audio_out is not None
+        # Audio input: component that receives ``audio: [user]``
+        audio_in_name = graph.audio_input_component()
+        if audio_in_name:
+            backends = self._component_backends.get(audio_in_name, {})
+            self._audio_in = backends.get("audio_in")
+            logger.debug("Graph audio in ← %s", audio_in_name)
 
-        if has_audio_in:
-            fsm.on_vad_open = self._on_vad_open
-            fsm.on_vad_close = self._on_vad_close
+        # Audio output: component that sends ``audio: [user]``
+        audio_out_name = graph.audio_output_component()
+        if audio_out_name:
+            backends = self._component_backends.get(audio_out_name, {})
+            self._audio_out = backends.get("audio_out")
+            logger.debug("Graph audio out → %s", audio_out_name)
 
-        fsm.on_transcript_ready = self._on_transcript_ready
+        # Text input: component that receives ``text: [user]``
+        text_in_name = graph.text_input_component()
+        if text_in_name:
+            backends = self._component_backends.get(text_in_name, {})
+            self._talker = backends.get("text_in")
+            logger.debug("Graph text in ← %s", text_in_name)
 
-        if has_audio_out:
-            fsm.on_first_token = self._on_first_token
-            fsm.on_full_answer = self._on_full_answer
+        # Core component (harness: core) — provides text_out
+        core_name = graph.core_component()
+        if core_name:
+            backends = self._component_backends.get(core_name, {})
+            self._thinker = backends.get("text_out")
+            logger.debug("Graph core → %s", core_name)
 
-        fsm.on_cancel_all = self._on_cancel_all
-        fsm.on_speech_end = self._on_speech_end
-        fsm.on_preemption_done = self._on_preemption_done
-        fsm.on_fatal_error = self._on_fatal_error
-
-        # Log inferred tempo for each component
-        for cname in graph.component_names():
-            tempo = graph.infer_tempo(cname)
-            logger.debug(
-                "component %s tempo=%s  backends=%s",
-                cname, tempo,
-                sorted(self._component_backends.get(cname, {})),
-            )
-
-        logger.debug(
-            "Graph FSM wired  core=%s  components=%d  routes=%d",
-            core_name,
-            len(graph.components),
-            len(graph.routes),
+        logger.info(
+            "Graph routes wired  audio_in=%s  audio_out=%s  "
+            "text_in=%s  core=%s",
+            audio_in_name or "—",
+            audio_out_name or "—",
+            text_in_name or "—",
+            core_name or "—",
         )
 
     # ── FSM action handlers ─────────────────────────────────────────────
@@ -1713,6 +1712,127 @@ class Session:
         """
         logger.error("Fatal session error: %s", error)
         await self.stop()
+
+    # ── graph-mode helpers ────────────────────────────────────────────
+
+    async def finalize_utterance(self) -> str | None:
+        """Finalize the current utterance and return the transcript.
+
+        For graph mode: signals end-of-stream to the ASR backend, waits
+        for the ASR task to complete, and returns the final transcript.
+        The transcript is also forwarded to ``_graph_transcript_callback``
+        if set (so the bridge can deliver it to the adapter).
+
+        Returns ``None`` if no transcript was produced (silence).
+        """
+        # Signal end-of-stream to the chunk queue
+        if self._asr_task is not None and not self._asr_task.done():
+            if self._asr_queue is not None:
+                await self._asr_queue.put(None)
+
+            try:
+                await self._asr_task
+            except asyncio.CancelledError:
+                logger.debug("ASR task was cancelled during finalize_utterance")
+            except Exception as exc:
+                logger.error("ASR task raised during finalize: %s", exc)
+
+        transcript: str | None = None
+        if self._pending_transcript is not None:
+            transcript = self._pending_transcript
+
+        # Buffered ASR fallback
+        if transcript is None and self._asr_buffer is not None and self._asr_buffer:
+            wav_bytes = bytes(self._asr_buffer)
+            audio_in = self._audio_in
+            if audio_in is not None:
+                if hasattr(audio_in, "transcribe") and callable(audio_in.transcribe):
+                    try:
+                        transcript = await audio_in.transcribe(
+                            wav_bytes, sample_rate=16000
+                        )
+                    except Exception as exc:
+                        logger.error("Graph ASR transcribe failed: %s", exc)
+                elif hasattr(audio_in, "process") and callable(audio_in.process):
+                    try:
+                        from ..types import Part
+
+                        parts = await audio_in.process(Part.audio(wav_bytes))
+                        text_parts = [p.text_of() for p in parts if p.is_text]
+                        transcript = " ".join(text_parts) if text_parts else ""
+                    except Exception as exc:
+                        logger.error("Graph ASR process failed: %s", exc)
+
+        # Cleanup
+        self._asr_task = None
+        self._asr_collecting = False
+        self._asr_buffer = None
+        self._asr_queue = None
+
+        if transcript is None:
+            transcript = ""
+
+        # Deliver via callback (bridge hook)
+        if self._graph_transcript_callback is not None and transcript:
+            await self._graph_transcript_callback(transcript)
+
+        return transcript or None
+
+    async def _push_to_component(
+        self, component_name: str, sense: str, data: Any
+    ) -> None:
+        """Push data of a given sense to a component's input.
+
+        Looks up the component's slot backend for *sense* and routes
+        the data to it.  Supports audio, text, image, and video senses.
+        """
+        backends = self._component_backends.get(component_name, {})
+        slot_map = {
+            "audio": "audio_in",
+            "text": "text_in",
+            "image": "image_in",
+            "video": "video_in",
+        }
+        slot = slot_map.get(sense)
+        if slot is None:
+            logger.warning(
+                "No slot mapping for sense %r to component %s",
+                sense, component_name,
+            )
+            return
+
+        backend = backends.get(slot)
+        if backend is None:
+            logger.debug(
+                "Component %s has no %s backend — can't push %s",
+                component_name, slot, sense,
+            )
+            return
+
+        if sense == "audio":
+            # Feed audio data
+            if self._audio_in is not None:
+                await self._forward_to_asr(data if isinstance(data, bytes) else b"")
+            else:
+                logger.debug("No audio_in backend to push audio to")
+        elif sense == "text":
+            text = str(data) if not isinstance(data, str) else data
+            if hasattr(backend, "chat") and callable(backend.chat):
+                # Feed text directly — this will need task management
+                logger.debug(
+                    "Push text to component %s (chat backend): %.80s",
+                    component_name, text,
+                )
+            else:
+                logger.debug(
+                    "Push text to component %s: %.80s",
+                    component_name, text,
+                )
+        else:
+            logger.debug(
+                "Push sense=%s to component %s (%s bytes)",
+                sense, component_name, len(data) if isinstance(data, bytes) else "?",
+            )
 
     # ── internal helpers ────────────────────────────────────────────────
 

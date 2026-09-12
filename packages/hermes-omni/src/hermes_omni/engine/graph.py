@@ -244,6 +244,41 @@ class ComponentGraph:
                         )
                     )
 
+    # ── graph endpoint helpers ─────────────────────────────────────────────
+
+    def audio_input_component(self) -> str | None:
+        """Find the component that receives ``audio`` from ``user`` in its ``ins``.
+
+        Returns ``None`` if no component declares ``audio: [user]``.
+        """
+        for cname, comp in self.components.items():
+            for sense, sources in comp.ins.items():
+                if sense == "audio" and "user" in sources:
+                    return cname
+        return None
+
+    def audio_output_component(self) -> str | None:
+        """Find the component that sends ``audio`` to ``user`` in its ``outs``.
+
+        Returns ``None`` if no component declares ``audio: [user]``.
+        """
+        for cname, comp in self.components.items():
+            for sense, dests in comp.outs.items():
+                if sense == "audio" and "user" in dests:
+                    return cname
+        return None
+
+    def text_input_component(self) -> str | None:
+        """Find the component that receives ``text`` from ``user`` in its ``ins``.
+
+        Returns ``None`` if no component declares ``text: [user]``.
+        """
+        for cname, comp in self.components.items():
+            for sense, sources in comp.ins.items():
+                if sense == "text" and "user" in sources:
+                    return cname
+        return None
+
     # ── inference ───────────────────────────────────────────────────────────
 
     def infer_tempo(self, component: str) -> str:
@@ -305,6 +340,10 @@ class ComponentGraph:
             if comp.tools.get("harness") == "core":
                 return cname
         return None
+
+    def core_component(self) -> str | None:
+        """Alias for :meth:`infer_core` — component with ``harness: core``."""
+        return self.infer_core()
 
     def infer_profile_mode(self) -> str:
         """Infer the profile's emergent mode label.

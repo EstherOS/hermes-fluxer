@@ -97,7 +97,12 @@ class OmniAdapterMixin:
         logger.info("Fluxer: hermes-omni Session created")
 
     def _omni_synthesize(self, text: str) -> bytes | None:
-        """Synthesize speech via hermes-omni; returns WAV bytes or None."""
+        """Synthesize speech via hermes-omni; returns WAV bytes or None.
+
+        Uses the session's ``_audio_out`` backend — for v1 this is the
+        resolved audio_out slot; for v2 (graph) this is the backend of
+        the component that sends ``audio: [user]``.
+        """
         if self._omni_session is None:
             return None
         try:
@@ -115,7 +120,12 @@ class OmniAdapterMixin:
         return None
 
     def _omni_transcribe(self, wav_bytes: bytes) -> str | None:
-        """Transcribe audio via hermes-omni; returns text or None."""
+        """Transcribe audio via hermes-omni; returns text or None.
+
+        Uses the session's ``_audio_in`` backend — for v1 this is the
+        resolved audio_in slot; for v2 (graph) this is the backend of
+        the component that receives ``audio: [user]``.
+        """
         if self._omni_session is None:
             return None
         try:
