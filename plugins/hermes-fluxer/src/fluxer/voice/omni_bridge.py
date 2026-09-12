@@ -116,6 +116,9 @@ class OmniVoiceBridge:
         """
         self._closed = False
         self._spawn(self._start_async())
+        # Register this bridge as the cascade handler so the controller
+        # routes new participants' track_subscribed events to us.
+        self.voice_session.cascade = self
         log.info(
             "OmniVoiceBridge starting  guild=%s  channel=%s  mode=%s",
             self.voice_session.guild_id,
