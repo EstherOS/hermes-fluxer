@@ -472,6 +472,16 @@ class VoiceController:
         if rtc is None:
             raise RuntimeError("livekit unavailable")
         endpoint = str(vsu.get("endpoint") or "")
+        # Resolve the hostname ourselves — the container's DNS may not handle
+        # the .media TLD correctly, but the IP is reachable.
+        try:
+            endpoint_host = endpoint.split("/")[0].split(":")[0].split("?")[0]
+            ip = socket.gethostbyname(endpoint_host)
+            if ip != endpoint_host:
+                endpoint = endpoint.replace(endpoint_host, ip)
+                log.debug("_connect_room: resolved %s -> %s", endpoint_host, ip)
+        except Exception as exc:
+            log.warning("_connect_room: DNS resolution failed for %s: %s", endpoint, exc)
         url = endpoint if endpoint.startswith(("ws://", "wss://")) else f"wss://{endpoint}"
         token = str(vsu.get("token") or "")
         room = rtc.Room()
