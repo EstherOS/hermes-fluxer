@@ -45,7 +45,7 @@ updates:
   check: false
 _config_version: 42
 omni:
-  default_profile: omni-unified
+  default_profile: torch-unified
   profiles:
     split-local:
       mode: stitched
@@ -74,9 +74,6 @@ omni:
         - audio
         - image
         - video
-      bindings:
-        audio_out:
-          backend: local.crispasr_tts
     torch-unified:
       mode: unified
       tempo: realtime

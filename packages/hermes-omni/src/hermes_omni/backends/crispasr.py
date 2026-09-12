@@ -12,13 +12,11 @@ Environment: needs VK_DRIVER_FILES + LD_LIBRARY_PATH for the NVIDIA Vulkan ICD
 
 from __future__ import annotations
 
-import array
 import asyncio
 import logging
 import os
 import subprocess
 import tempfile
-import wave
 from pathlib import Path
 from typing import Any, AsyncIterator
 
@@ -187,144 +185,4 @@ class CrispAsrMiniOmni2Backend:
         )
 
 
-# ── TTS backend (AudioOut protocol) ─────────────────────────────────────
-
-
-class CrispAsrTtsSession:
-    """One-shot TTS session over CrispASR — Kokoro backend for fast CPU TTS.
-
-    Runs ``crispasr --backend kokoro -m auto --tts "text" --tts-output out.wav``
-    and extracts raw PCM (resampled to 16 kHz for the hermes-omni pipeline).
-
-    Uses Kokoro via ``-m auto`` (auto-cached, ~135 MB Q8_0) because the
-    mini-omni2 TTS decoder's GGML Vulkan graph (~21 GB) exceeds the 6 GB
-    VRAM on this GTX 1060.  Kokoro runs on CPU via ggml (82M params, fast).
-    """
-
-    def __init__(
-        self,
-        *,
-        binary: str | Path | None = None,
-        root: str | Path | None = None,
-        timeout: float = 120.0,
-    ) -> None:
-        self._root = Path(root) if root is not None else _resolve_root()
-        self._binary = Path(binary) if binary is not None else _crispasr_binary(self._root)
-        self._timeout = timeout
-
-    async def synthesize(self, text: str, *, voice: str | None = None) -> bytes:
-        """Text → raw PCM bytes (16 kHz, 16-bit, mono).
-
-        Returns raw PCM suitable for the session output queue (no WAV header).
-        """
-        loop = asyncio.get_running_loop()
-
-        tmp_wav = tempfile.mktemp(suffix=".wav", prefix="hermes-omni-tts-")
-        try:
-            cmd = [
-                str(self._binary),
-                "--backend", "kokoro",
-                "-m", "auto",
-                "--tts", text,
-                "--tts-output", tmp_wav,
-            ]
-            env = _vulkan_env()
-
-            proc = await loop.run_in_executor(
-                None,
-                lambda: subprocess.run(
-                    cmd, capture_output=True, text=True,
-                    timeout=self._timeout, env=env,
-                ),
-            )
-
-            if proc.returncode != 0 and proc.returncode not in (139,):
-                # Exit 139 (SIGSEGV) happens on Vulkan teardown AFTER the
-                # WAV is written — Kokoro runs on CPU, the crash is benign.
-                stderr = proc.stderr.strip()[-500:]
-                raise BackendError(f"CrispASR TTS rc={proc.returncode}: {stderr}")
-
-            if not os.path.isfile(tmp_wav):
-                raise BackendError("CrispASR TTS produced no output file")
-
-            # Read the WAV file and extract raw PCM, resampled to 16 kHz
-            with wave.open(tmp_wav, "rb") as wf:
-                sr = wf.getframerate()
-                nframes = wf.getnframes()
-                raw_pcm = wf.readframes(nframes)
-
-            samples = array.array("h")
-            samples.frombytes(raw_pcm[: len(raw_pcm) // 2 * 2])
-
-            # Kokoro outputs 24 kHz — resample to 16 kHz for the session
-            if sr != 16000:
-                resampled = _resample(samples, sr, 16000)
-            else:
-                resampled = samples
-
-            return resampled.tobytes()
-
-        except subprocess.TimeoutExpired:
-            raise BackendError(f"CrispASR TTS timed out after {self._timeout}s")
-        except BackendError:
-            raise
-        except Exception as exc:
-            raise BackendError(f"CrispASR TTS failed: {exc}") from exc
-        finally:
-            if os.path.isfile(tmp_wav) and tmp_wav.startswith(tempfile.gettempdir()):
-                os.unlink(tmp_wav)
-
-
-class CrispAsrTtsBackend:
-    """AudioOut backend using CrispASR + Kokoro TTS (ggml CPU, no torch/CUDA).
-
-    Backend name: ``local.crispasr_tts``
-
-    One subprocess per call (Kokoro is small — 82M params, ~1.5 s for short
-    text).  Returns 16 kHz 16-bit mono raw PCM.
-    """
-
-    name = "local.crispasr_tts"
-
-    def __init__(
-        self,
-        *,
-        root: str | Path | None = None,
-        binary: str | Path | None = None,
-        **kwargs: Any,
-    ) -> None:
-        self._root = Path(root) if root else _resolve_root()
-        self._binary = Path(binary) if binary else _crispasr_binary(self._root)
-
-    async def synthesize(self, text: str, *, voice: str | None = None) -> bytes:
-        session = CrispAsrTtsSession(binary=self._binary, root=self._root)
-        return await session.synthesize(text, voice=voice)
-
-    async def open_session(self, **options: Any) -> CrispAsrTtsSession:
-        return CrispAsrTtsSession(binary=self._binary, root=self._root)
-
-
 # ── helpers ─────────────────────────────────────────────────────────────
-
-
-def _resample(samples: array.array, src_rate: int, dst_rate: int) -> array.array:
-    """Mono int16 resample using linear interpolation (stdlib only)."""
-    if src_rate == dst_rate or not samples:
-        return array.array("h", samples)
-    # Use audioop.ratecv if available (stdlib on 3.11)
-    try:
-        import audioop as _audioop
-        converted, _state = _audioop.ratecv(samples.tobytes(), 2, 1, int(src_rate), int(dst_rate), None)
-        return array.array("h", converted)
-    except ImportError:
-        pass
-    # Fallback: linear interpolation
-    n_out = int(len(samples) * dst_rate / src_rate)
-    out = array.array("h", [0]) * n_out
-    for i in range(n_out):
-        src_pos = i * src_rate / dst_rate
-        lo = int(src_pos)
-        hi = min(lo + 1, len(samples) - 1)
-        frac = src_pos - lo
-        out[i] = int(samples[lo] * (1 - frac) + samples[hi] * frac)
-    return out

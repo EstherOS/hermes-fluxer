@@ -22,11 +22,8 @@ from __future__ import annotations
 import array
 import asyncio
 import logging
-import tempfile
 from types import SimpleNamespace
 from typing import Any, Optional
-
-from hermes_omni.types import Part
 
 from . import audio as audio_lib
 from .config import VoiceConfig
@@ -367,6 +364,8 @@ class OmniVoiceBridge:
         LISTENING → ``trigger_vad_close()`` → ANALYZING.
         In unified streaming mode the backend already received all PCM
         chunks via ``feed_audio``, so this merely advances the FSM state.
+        For the torch Mini-Omni2 backend, ``flush()`` is also called so
+        the buffered PCM triggers inference.
         """
         from hermes_omni.session import SessionState
 
@@ -375,6 +374,12 @@ class OmniVoiceBridge:
 
         if state is SessionState.LISTENING:
             await self._safe_trigger(self._fsm.trigger_vad_close)
+            # Flush the streaming session (Mini-Omni2 torch backend)
+            if (
+                self._stream_session is not None
+                and hasattr(self._stream_session, "flush")
+            ):
+                await self._safe_flush(self._stream_session)
 
     # ── session.feed_audio() wrapper ────────────────────────────────────────
 
@@ -402,6 +407,14 @@ class OmniVoiceBridge:
             await trigger_fn()
         except Exception as e:
             log.warning("OmniVoiceBridge: FSM trigger failed: %s", e)
+
+    @staticmethod
+    async def _safe_flush(session) -> None:
+        """Call ``flush()`` on a streaming session with error isolation."""
+        try:
+            await session.flush()
+        except Exception as e:
+            log.warning("OmniVoiceBridge: flush failed: %s", e)
 
     # ── persistent streaming session (unified mode, no temp files) ───────────
 
@@ -445,6 +458,22 @@ class OmniVoiceBridge:
                     if text:
                         self.stats["transcripts"] += 1
                         await self._fsm.trigger_transcript(text)
+                else:
+                    # Audio part — push raw PCM bytes to the session's output
+                    # queue so _run_output() can publish them to LiveKit.
+                    audio_data = part.data
+                    if isinstance(audio_data, bytes) and audio_data:
+                        try:
+                            await self.session._output_queue.put(audio_data)
+                        except Exception as e:
+                            log.warning(
+                                "OmniVoiceBridge: audio output push failed: %s", e,
+                            )
+                    else:
+                        log.debug(
+                            "OmniVoiceBridge: non-bytes audio part data (%s) — skipping",
+                            type(audio_data).__name__,
+                        )
         except asyncio.CancelledError:
             raise
         except Exception as exc:

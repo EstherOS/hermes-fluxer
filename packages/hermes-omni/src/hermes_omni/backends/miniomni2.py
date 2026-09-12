@@ -13,19 +13,22 @@ Architecture:
 
 from __future__ import annotations
 
+import array
 import asyncio
+import io
+import json
 import logging
 import os
 import subprocess
 import tempfile
+import wave
 from pathlib import Path
-from typing import Any, AsyncIterator, Sequence
+from typing import Any, AsyncIterator
 
 from ..types import (
     BackendError,
     DuplexSession,
     Part,
-    SenseBinding,
 )
 
 logger = logging.getLogger(__name__)
@@ -67,10 +70,44 @@ class MiniOmni2Session(DuplexSession):
         self._closed = False
         self._opened = False
         self._sent = 0
+        self._audio_buffer = bytearray()
 
     async def open(self) -> None:
         self._opened = True
         logger.debug("MiniOmni2Session opened")
+
+    async def feed_audio(self, chunk: bytes) -> None:
+        """Buffer raw PCM bytes (16 kHz, 16-bit mono).  Non-blocking."""
+        self._audio_buffer.extend(chunk)
+
+    async def flush(self) -> None:
+        """Flush buffered PCM into inference; queue outputs for receive().
+
+        Builds a WAV from the accumulated PCM (16 kHz 16-bit mono),
+        calls :meth:`send`, which runs inference and puts text + audio
+        Parts into the output queue for :meth:`receive` to yield.
+        """
+        if not self._audio_buffer:
+            logger.debug("MiniOmni2Session.flush: no buffered audio — skipping")
+            return
+        pcm_bytes = bytes(self._audio_buffer)
+        self._audio_buffer.clear()
+
+        # Wrap raw PCM in a WAV container for the probe script
+        buf = io.BytesIO()
+        with wave.open(buf, "wb") as wf:
+            wf.setnchannels(1)
+            wf.setsampwidth(2)  # 16-bit
+            wf.setframerate(16000)
+            wf.writeframes(pcm_bytes)
+        wav_data = buf.getvalue()
+        buf.close()
+
+        logger.debug(
+            "MiniOmni2Session.flush: %d PCM bytes → %d WAV bytes",
+            len(pcm_bytes), len(wav_data),
+        )
+        await self.send(Part.audio(wav_data, mime="audio/wav", meta={"sr": 16000}))
 
     async def send(self, part: Part) -> None:
         if self._closed or not self._opened:
@@ -112,7 +149,6 @@ class MiniOmni2Session(DuplexSession):
             # Parse PROBE_JSON from stdout
             for line in proc.stdout.splitlines():
                 if line.startswith("PROBE_JSON "):
-                    import json
                     metrics = json.loads(line[11:])
                     break
             else:
@@ -123,12 +159,11 @@ class MiniOmni2Session(DuplexSession):
             if text.strip():
                 await self._queue.put(Part.text(text.strip()))
 
-            # Yield output audio part if WAV was written
+            # Yield output audio part if WAV was written — raw PCM
             if os.path.isfile(out_wav) and os.path.getsize(out_wav) > 100:
-                with open(out_wav, "rb") as f:
-                    wav_bytes = f.read()
+                pcm_bytes = _wav_to_pcm(out_wav)
                 await self._queue.put(
-                    Part.audio(wav_bytes, mime="audio/wav", meta={"sr": 24000})
+                    Part.audio(pcm_bytes, mime="audio/L16", meta={"sr": 16000})
                 )
 
         except subprocess.TimeoutExpired:
@@ -215,3 +250,45 @@ class MiniOmni2DuplexBackend:
             max_tokens=self._max_tokens,
             temperature=self._temperature,
         )
+
+
+# ── helpers ─────────────────────────────────────────────────────────────
+
+
+def _wav_to_pcm(wav_path: str) -> bytes:
+    """Strip WAV header from *wav_path*, resample from native sr → 16 kHz.
+
+    Returns raw PCM bytes (16 kHz, 16-bit, mono).
+    """
+    with wave.open(wav_path, "rb") as wf:
+        sr = wf.getframerate()
+        nframes = wf.getnframes()
+        raw = wf.readframes(nframes)
+    samples = array.array("h")
+    samples.frombytes(raw[: len(raw) // 2 * 2])
+    if sr != 16000:
+        samples = _resample(samples, sr, 16000)
+    return samples.tobytes()
+
+
+def _resample(samples: array.array, src_rate: int, dst_rate: int) -> array.array:
+    """Mono int16 resample via audioop.ratecv (stdlib) or linear interpolation."""
+    if src_rate == dst_rate or not samples:
+        return array.array("h", samples)
+    try:
+        import audioop as _audioop
+        converted, _state = _audioop.ratecv(
+            samples.tobytes(), 2, 1, int(src_rate), int(dst_rate), None,
+        )
+        return array.array("h", converted)
+    except ImportError:
+        pass
+    n_out = int(len(samples) * dst_rate / src_rate)
+    out = array.array("h", [0]) * n_out
+    for i in range(n_out):
+        src_pos = i * src_rate / dst_rate
+        lo = int(src_pos)
+        hi = min(lo + 1, len(samples) - 1)
+        frac = src_pos - lo
+        out[i] = int(samples[lo] * (1 - frac) + samples[hi] * frac)
+    return out
