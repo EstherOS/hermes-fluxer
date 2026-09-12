@@ -225,7 +225,7 @@ class OmniVoiceBridge:
         self._speaker_id = speaker_id
         self._speaker_name = speaker_name
 
-        log.debug(
+        log.info(
             "OmniVoiceBridge: subscribed audio track for %s (%s)",
             speaker_name or speaker_id, speaker_id,
         )
