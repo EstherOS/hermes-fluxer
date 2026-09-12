@@ -142,9 +142,10 @@ class OmniVoiceBridge:
         self._hook_fsm()
         # 3. Output pipeline
         self._spawn(self._run_output())
-        # 4. Unified streaming mode — open persistent session
+        # 4. Unified streaming mode — open persistent session (await so
+        #    the session is ready before subscribing to tracks below)
         if self._is_streaming_mode():
-            self._spawn(self._run_stream_session())
+            await self._run_stream_session()
         # 5. Subscribe to existing participants' tracks
         try:
             from livekit.rtc import TrackKind
@@ -210,15 +211,14 @@ class OmniVoiceBridge:
         fsm = self._fsm
         _orig = fsm.on_transcript_ready
 
-        if _orig is not None:
-
-            async def _wrapped(text: str) -> None:
-                # 1. Deliver the user's speech as a message to the adapter
-                await self._deliver_transcript(text)
-                # 2. Continue the normal Session pipeline (thinker → TTS)
+        async def _wrapped(text: str) -> None:
+            # 1. Deliver the user's speech as a message to the adapter
+            await self._deliver_transcript(text)
+            # 2. Continue the normal Session pipeline (thinker → TTS), if any
+            if _orig is not None:
                 await _orig(text)
 
-            fsm.on_transcript_ready = _wrapped
+        fsm.on_transcript_ready = _wrapped
 
     # ── inbound: LiveKit mic → VAD → session.feed_audio() ───────────────────
 
@@ -388,8 +388,8 @@ class OmniVoiceBridge:
             await self.session.feed_audio(data)
         except Exception as e:
             log.warning("OmniVoiceBridge: feed_audio failed: %s", e)
-        # 2. If a persistent streaming session is open, feed raw PCM to it
-        if self._stream_session is not None:
+        # 2. If a persistent streaming session is open and started, feed raw PCM to it
+        if self._stream_session is not None and self._stream_started:
             try:
                 await self._stream_session.feed_audio(data)
             except Exception as e:
