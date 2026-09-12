@@ -1111,25 +1111,34 @@ class Session:
     def _wire_graph(self) -> None:
         """Wire FSM callbacks for a component-graph profile.
 
-        Uses the graph's push routes to build inter-component data flow.
-        The "core" component (the one with ``harness: core`` tool, or the
-        first component) drives the FSM transitions.
+        Scans ALL components for audio_in/audio_out/text_in/text_out backends
+        and wires them into the FSM. The core component drives the FSM state,
+        but audio I/O may live on dedicated components (ears/mouth).
         """
         graph = self.profile.graph  # type: ignore[union-attr]
         fsm = self._fsm
 
-        # Identify the core component — the one that should drive the FSM
+        # Identify the core component
         core_name = graph.infer_core()
         if core_name is None:
             names = graph.component_names()
             core_name = names[0] if names else "brain"
 
-        # Pull backends for the core component
-        core_backends = self._component_backends.get(core_name, {})
-        self._audio_in = core_backends.get("audio_in")
-        self._audio_out = core_backends.get("audio_out")
-        self._talker = core_backends.get("text_in")
-        self._thinker = core_backends.get("text_out")
+        # Scan ALL components for audio/text backends
+        self._audio_in = None
+        self._audio_out = None
+        self._talker = None
+        self._thinker = None
+        for cname in graph.component_names():
+            backends = self._component_backends.get(cname, {})
+            if backends.get("audio_in") is not None:
+                self._audio_in = backends["audio_in"]
+            if backends.get("audio_out") is not None:
+                self._audio_out = backends["audio_out"]
+            if backends.get("text_in") is not None:
+                self._talker = backends["text_in"]
+            if backends.get("text_out") is not None:
+                self._thinker = backends["text_out"]
 
         # Wire FSM callbacks from the core's backends (same pattern as
         # _wire_fsm for the stitched path)
