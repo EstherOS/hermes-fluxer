@@ -82,6 +82,7 @@ class Component:
     ``outs`` maps sense → list of destination names.
     ``tools`` maps tool-name → target (component name or ``"core"``).
     ``io`` maps sense → raw config dict for per-connection overrides.
+    ``model`` optionally specifies the backend name to use for this component.
     """
 
     name: str
@@ -89,6 +90,7 @@ class Component:
     outs: dict[str, list[str]] = field(default_factory=dict)
     tools: dict[str, str] = field(default_factory=dict)
     io: dict[str, dict[str, Any]] = field(default_factory=dict)
+    model: str | None = None
 
     def _io_for(self, sense: str, fallback: dict[str, Any] | None = None) -> dict[str, Any]:
         """Resolve effective io settings for *sense* (config override → default)."""
@@ -506,12 +508,18 @@ def parse_component_config(
                 else:
                     warnings.append(f"component {cname!r}: io.{io_sense!r} is not a mapping; skipping")
 
+        model = cfg.get("model")
+        if model is not None and not isinstance(model, str):
+            warnings.append(f"component {cname!r}: model must be a string; ignoring")
+            model = None
+
         parsed[cname] = Component(
             name=cname,
             ins=ins,
             outs=outs,
             tools=tools,
             io=io_cfg,
+            model=model,
         )
 
     # ── Build and validate the graph ──────────────────────────────────────

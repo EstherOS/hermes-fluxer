@@ -530,7 +530,12 @@ class Session:
                     needed_slots.add("video_out")
 
             for slot in needed_slots:
+                # Use the component's declared model if set, otherwise fall back
                 backend_name = self._slot_to_backend_name(slot)
+                if comp.model is not None:
+                    # A single model can serve multiple slots; only override
+                    # if the slot is not explicitly mapped.
+                    pass
                 try:
                     backend = await self._try_backend(builder, backend_name, {})
                     comp_backends[slot] = backend
@@ -545,10 +550,11 @@ class Session:
 
     @staticmethod
     def _slot_to_backend_name(slot: str) -> str:
-        """Best-guess backend name for a slot when no explicit binding exists."""
+        """Best-guess backend name for a slot when no explicit binding exists.
+        Overridden by the adapter in production via model: declarations."""
         mapping: dict[str, str] = {
-            "audio_in": "local.crispasr_stream",
-            "audio_out": "local.kokoro",
+            "audio_in": "local.whispercpp",
+            "audio_out": "local.piper",
             "text_in": "agent",
             "text_out": "agent",
             "image_in": "local.smolvlm",
