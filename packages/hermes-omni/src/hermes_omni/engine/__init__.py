@@ -1,0 +1,1 @@
+"""Omni engine component graph — push routing, tempo/emergent inference."""

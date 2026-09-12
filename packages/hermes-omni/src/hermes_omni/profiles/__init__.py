@@ -52,11 +52,21 @@ from ..types import (
     is_slot,
     slot_name,
 )
+from ..engine.graph import (
+    ComponentGraph,
+    ComponentGraphProfile,
+    detect_config_version,
+    parse_component_config,
+)
 
 __all__ = [
     "ResolvedProfile",
+    "ComponentGraph",
+    "ComponentGraphProfile",
     "resolve_profile",
     "parse_profile",
+    "parse_component_config",
+    "detect_config_version",
     "omni_section",
     "DEFAULT_PROFILE_NAME",
     "DEFAULT_PROFILE_SPEC",

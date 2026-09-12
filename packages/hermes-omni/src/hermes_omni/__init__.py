@@ -43,6 +43,11 @@ from .backends.registry import (
     register_builtin_backends,
     unregister_backend,
 )
+from .engine.graph import (
+    ComponentGraph,
+    ComponentGraphProfile,
+    PushRoute,
+)
 from .profiles import (
     DEFAULT_PROFILE_NAME,
     DEFAULT_PROFILE_SPEC,
@@ -72,6 +77,8 @@ __all__ = [
     "CancellableMixin",
     "Cascade",
     "CascadeSession",
+    "ComponentGraph",
+    "ComponentGraphProfile",
     "DEFAULT_PROFILE_NAME",
     "DEFAULT_PROFILE_SPEC",
     "Direction",
@@ -83,6 +90,7 @@ __all__ = [
     "Part",
     "PreBufferRing",
     "ProfileError",
+    "PushRoute",
     "Realtime",
     "ResolvedProfile",
     "Sense",
