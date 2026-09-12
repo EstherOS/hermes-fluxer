@@ -49,6 +49,7 @@ from ..types import (
     UncancelableError,
 )
 from ..profiles import ResolvedProfile
+from ..engine.graph import ComponentGraphProfile
 from .thinker_bridge import ThinkerBridge, BridgeResult
 
 __all__ = [
@@ -655,7 +656,7 @@ class Session:
 
     def __init__(
         self,
-        profile: ResolvedProfile,
+        profile: ResolvedProfile | ComponentGraphProfile,
         *,
         get_backend: Callable[..., Any] | None = None,
         prebuffer_size: int = PREBUFFER_SIZE,
@@ -681,6 +682,9 @@ class Session:
         self._realtime_backend: Any = None
         self._eyes: Any = None
         self._text: Any = None
+
+        # Component-graph backends (set during _resolve_graph_backends)
+        self._component_backends: dict[str, dict[str, Any]] = {}
 
         # ── ASR / thinker / TTS task tracking ───────────────────────────
         self._asr_task: asyncio.Task | None = None
@@ -716,13 +720,23 @@ class Session:
             return
         self._running = True
 
-        await self._resolve_backends()
-        self._wire_fsm()
+        if isinstance(self.profile, ComponentGraphProfile):
+            await self._resolve_graph_backends()
+            self._wire_graph()
+        else:
+            await self._resolve_backends()
+            self._wire_fsm()
 
+        profile_mode = (
+            getattr(self.profile, "mode", None)
+            or getattr(self.profile, "graph", None)
+            and self.profile.graph.infer_profile_mode()
+            or "component_graph"
+        )
         logger.info(
             "Session started  profile=%s  mode=%s  state=%s  backends=%s",
             self.profile.name,
-            self.profile.mode,
+            profile_mode,
             self._fsm.state.name,
             sorted(self._backends),
         )
@@ -747,6 +761,7 @@ class Session:
             )
 
         self._backends.clear()
+        self._component_backends.clear()
         self._audio_in = self._audio_out = None
         self._talker = self._thinker = None
         self._realtime_backend = self._eyes = self._text = None
@@ -1009,6 +1024,147 @@ class Session:
         logger.debug(
             "FSM wired (realtime=%s, audio_in=%s, audio_out=%s, thinker=%s)",
             has_realtime, has_audio_in, has_audio_out, has_thinker,
+        )
+
+    # ── Component-graph backend resolution ──────────────────────────────
+
+    async def _resolve_graph_backends(self) -> None:
+        """Resolve backends for each component in the graph.
+
+        For each component, examines its ``ins`` and ``outs`` to determine
+        which backends it needs (audio_in, audio_out, text_in, text_out,
+        image_in, video_in), then builds them with :meth:`_try_backend`.
+
+        Results are stored in ``self._component_backends[component_name]``
+        as a ``{slot_name: instance}`` dict.  Also populates the legacy
+        ``self._backends`` dict so that ``_cancel_all_backends`` still works.
+        """
+        builder = self._get_backend
+        if builder is None:
+            from ..backends.registry import get_backend as _registry_get
+
+            builder = _registry_get
+
+        graph = self.profile.graph  # type: ignore[union-attr]
+        self._component_backends = {}
+
+        for cname in graph.component_names():
+            comp = graph.get_component(cname)
+            if comp is None:
+                continue
+            comp_backends: dict[str, Any] = {}
+
+            # Determine which slots this component needs based on ins/outs
+            needed_slots: set[str] = set()
+            for sense in comp.ins:
+                if sense == "audio":
+                    needed_slots.add("audio_in")
+                elif sense == "text":
+                    needed_slots.add("text_in")
+                elif sense == "image":
+                    needed_slots.add("image_in")
+                elif sense == "video":
+                    needed_slots.add("video_in")
+            for sense in comp.outs:
+                if sense == "audio":
+                    needed_slots.add("audio_out")
+                elif sense == "text":
+                    needed_slots.add("text_out")
+                elif sense == "video":
+                    needed_slots.add("video_out")
+
+            for slot in needed_slots:
+                # Map slots to plausible backend names based on the slot
+                backend_name = self._slot_to_backend_name(slot)
+                try:
+                    backend = await self._try_backend(builder, backend_name, {})
+                    comp_backends[slot] = backend
+                    self._backends[f"{cname}:{slot}"] = backend
+                except BackendError as exc:
+                    logger.warning(
+                        "component %s: slot %s (%s) failed: %s",
+                        cname, slot, backend_name, exc,
+                    )
+
+            self._component_backends[cname] = comp_backends
+
+    @staticmethod
+    def _slot_to_backend_name(slot: str) -> str:
+        """Best-guess backend name for a slot when no explicit binding exists.
+
+        Returns a sensible default (e.g. ``"agent"`` for text, ``"null"``
+        for media slots that aren't installed).
+        """
+        mapping: dict[str, str] = {
+            "audio_in": "local.whispercpp",
+            "audio_out": "local.piper",
+            "text_in": "agent",
+            "text_out": "agent",
+            "image_in": "local.smolvlm",
+            "video_in": "local.smolvlm_video",
+            "video_out": "local.render",
+        }
+        return mapping.get(slot, "null")
+
+    # ── Component-graph FSM wiring ─────────────────────────────────────
+
+    def _wire_graph(self) -> None:
+        """Wire FSM callbacks for a component-graph profile.
+
+        Uses the graph's push routes to build inter-component data flow.
+        The "core" component (the one with ``harness: core`` tool, or the
+        first component) drives the FSM transitions.
+        """
+        graph = self.profile.graph  # type: ignore[union-attr]
+        fsm = self._fsm
+
+        # Identify the core component — the one that should drive the FSM
+        core_name = graph.infer_core()
+        if core_name is None:
+            names = graph.component_names()
+            core_name = names[0] if names else "brain"
+
+        # Pull backends for the core component
+        core_backends = self._component_backends.get(core_name, {})
+        self._audio_in = core_backends.get("audio_in")
+        self._audio_out = core_backends.get("audio_out")
+        self._talker = core_backends.get("text_in")
+        self._thinker = core_backends.get("text_out")
+
+        # Wire FSM callbacks from the core's backends (same pattern as
+        # _wire_fsm for the stitched path)
+        has_audio_in = self._audio_in is not None
+        has_audio_out = self._audio_out is not None
+
+        if has_audio_in:
+            fsm.on_vad_open = self._on_vad_open
+            fsm.on_vad_close = self._on_vad_close
+
+        fsm.on_transcript_ready = self._on_transcript_ready
+
+        if has_audio_out:
+            fsm.on_first_token = self._on_first_token
+            fsm.on_full_answer = self._on_full_answer
+
+        fsm.on_cancel_all = self._on_cancel_all
+        fsm.on_speech_end = self._on_speech_end
+        fsm.on_preemption_done = self._on_preemption_done
+        fsm.on_fatal_error = self._on_fatal_error
+
+        # Log inferred tempo for each component
+        for cname in graph.component_names():
+            tempo = graph.infer_tempo(cname)
+            logger.debug(
+                "component %s tempo=%s  backends=%s",
+                cname, tempo,
+                sorted(self._component_backends.get(cname, {})),
+            )
+
+        logger.debug(
+            "Graph FSM wired  core=%s  components=%d  routes=%d",
+            core_name,
+            len(graph.components),
+            len(graph.routes),
         )
 
     # ── FSM action handlers ─────────────────────────────────────────────
