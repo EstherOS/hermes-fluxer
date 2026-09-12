@@ -122,6 +122,7 @@ class MiniOmni2Session(DuplexSession):
                 str(self._probe_script),
                 "--audio", str(self._write_audio(part)),
                 "--out", out_wav,
+                "--repo", str(self._root / "mini-omni2"),
                 "--max-tokens", str(self._max_tokens),
                 "--temperature", str(self._temperature),
             ]

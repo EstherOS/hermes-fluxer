@@ -15,7 +15,8 @@ gateway:
         ignore_bots: true
         voice:
           enabled: true
-          auto_channels: []
+          auto_channels:
+            - '1547815091221561348'
           guild_id: '1547815091221561344'
           session_binding: channel
           transcripts: channel
