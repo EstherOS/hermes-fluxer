@@ -297,9 +297,10 @@ class OmniVoiceBridge:
     # ── VAD ─────────────────────────────────────────────────────────────────
 
     async def _on_vad_open(self) -> None:
-        """Speech started — audio is already flowing via ``feed_audio``."""
+        """Speech started — start ASR and begin feeding audio."""
         self.stats["vad_opens"] += 1
-        log.debug("OmniVoiceBridge: VAD open (audio already flowing)")
+        await self.session.start_asr()
+        log.info("OmniVoiceBridge: VAD open → start_asr")
 
     async def _on_vad_close(self) -> None:
         """Speech ended — finalize the utterance.

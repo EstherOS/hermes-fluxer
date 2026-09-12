@@ -405,6 +405,60 @@ class Session:
             return
         await self._forward_to_asr(chunk)
 
+    async def start_asr(self) -> None:
+        """Start the ASR streaming task on the ears component.
+
+        Called by the bridge when VAD opens.  Creates the chunk queue and
+        spins up a ``transcribe_stream`` task on the ears component's
+        ``audio_in`` backend.
+        """
+        if self._asr_task is not None and not self._asr_task.done():
+            return
+        ears = self._component_backends.get("ears", {})
+        audio_in = ears.get("audio_in")
+        if audio_in is None:
+            logger.debug("start_asr: no ears/audio_in backend")
+            self._asr_queue = asyncio.Queue()
+            self._asr_collecting = True
+            self._asr_buffer = bytearray()
+            self._pending_transcript = None
+            return
+
+        self._asr_queue = asyncio.Queue()
+        self._asr_collecting = True
+        self._asr_buffer = bytearray()
+        self._pending_transcript = None
+
+        if hasattr(audio_in, "transcribe_stream") and callable(audio_in.transcribe_stream):
+
+            async def _chunk_stream() -> AsyncIterator[bytes]:
+                while True:
+                    chunk = await self._asr_queue.get()
+                    if chunk is None:
+                        break
+                    yield chunk
+
+            async def _asr_task_body() -> None:
+                try:
+                    async for partial in audio_in.transcribe_stream(  # type: ignore[arg-type]
+                        _chunk_stream()
+                    ):
+                        if partial:
+                            self._pending_transcript = partial
+                except asyncio.CancelledError:
+                    pass
+                except Exception as exc:
+                    logger.error("ASR stream failed: %s", exc)
+
+            self._asr_task = asyncio.create_task(_asr_task_body())
+            logger.info("start_asr: streaming ASR started on ears/audio_in")
+        else:
+            logger.debug(
+                "start_asr: audio_in %s has no transcribe_stream — "
+                "buffering until VAD close",
+                type(audio_in).__name__,
+            )
+
     def output_stream(self) -> AsyncIterator[bytes]:
         """Async iterator yielding audio output from the session.
 
@@ -493,8 +547,8 @@ class Session:
     def _slot_to_backend_name(slot: str) -> str:
         """Best-guess backend name for a slot when no explicit binding exists."""
         mapping: dict[str, str] = {
-            "audio_in": "local.whispercpp",
-            "audio_out": "local.piper",
+            "audio_in": "local.crispasr_stream",
+            "audio_out": "local.kokoro",
             "text_in": "agent",
             "text_out": "agent",
             "image_in": "local.smolvlm",
