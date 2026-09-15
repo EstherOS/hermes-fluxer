@@ -29,11 +29,20 @@ import time
 from dataclasses import dataclass, field
 from difflib import SequenceMatcher
 from pathlib import Path
+import re
 from typing import Any, Callable, Dict, List, Optional, Set, Tuple
+
+# ── LiveKit participant identity parser ────────────────────────────────
+_IDENTITY_RE = re.compile(r"^user_(\d+)", re.IGNORECASE)
+
+def speaker_from_identity(identity: Any) -> tuple[str, str]:
+    """Extract (user_id, display_name) from a LiveKit participant identity."""
+    text = str(identity or "").strip()
+    match = _IDENTITY_RE.match(text)
+    return (match.group(1) if match else text, text)
 
 from . import audio as audio_lib
 from . import try_livekit
-from .cascade import VoiceCascade, speaker_from_identity
 from .config import VoiceConfig
 
 log = logging.getLogger("fluxer.voice")
@@ -516,11 +525,15 @@ class VoiceController:
                 from fluxer.voice.omni_bridge import OmniVoiceBridge
                 bridge = OmniVoiceBridge(self.adapter, omni_session, session,
                                          self.config)
+                # Wire output callback → controller's serialized publisher
+                bridge.on_audio_out = lambda pcm: self._on_omni_audio(session, pcm)
+                bridge.on_stop_playback = lambda: self.stop_playback(session)
                 session.cascade = bridge
             else:
-                session.cascade = VoiceCascade(session, self.adapter, self.config,
-                                               stt=self._stt_override)
-        session.cascade.start()
+                # No omni session configured — no voice pipeline available
+                session.cascade = None
+        if session.cascade is not None:
+            session.cascade.start()
         log.info(
             "Fluxer voice: room connected name=%s sid=%s state=%s local=%s remotes=%d",
             getattr(room, "name", ""), sid, _enum_str(rtc, "ConnectionState", getattr(room, "connection_state", None)),
@@ -776,6 +789,73 @@ class VoiceController:
                  getattr(publication, "name", TRACK_NAME), session.publication_sid)
         return True
 
+    def _on_omni_audio(self, session: Any, pcm_bytes: bytes) -> None:
+        """Sync bridge callback → enqueue for the session's single publisher."""
+        import array
+        from fluxer.voice.audio import SAMPLE_RATE, resample
+        # Piper outputs at 22050 Hz — resample to 48000 for LiveKit
+        samples = array.array("h", memoryview(pcm_bytes).cast("h"))
+        if not samples:
+            return
+        samples = resample(samples, 22050, SAMPLE_RATE)
+        queue = self._audio_out_queue(session)
+        try:
+            queue.put_nowait(samples)
+        except asyncio.QueueFull:
+            log.warning("Fluxer voice: omni audio queue full — dropping segment")
+            return
+        self._ensure_publisher_task(session)
+
+    # ── Omni audio playback: one serialized publisher per session ────────
+    #
+    # Multiple audio envelopes per turn (streamed sentences) must play in
+    # order: exactly one drainer task per session owns capture_frame, and
+    # stop_playback() drops queued segments for barge-in.
+
+    def _audio_out_queue(self, session: Any) -> asyncio.Queue:
+        queue = getattr(session, "audio_out_queue", None)
+        if queue is None:
+            queue = asyncio.Queue(maxsize=256)
+            session.audio_out_queue = queue
+        return queue
+
+    def _ensure_publisher_task(self, session: Any) -> None:
+        task = getattr(session, "publisher_task", None)
+        if task is None or task.done():
+            session.publisher_task = asyncio.create_task(self._run_publisher(session))
+
+    async def _run_publisher(self, session: Any) -> None:
+        """Drain omni audio segments to LiveKit, in order, one at a time."""
+        queue = self._audio_out_queue(session)
+        while True:
+            try:
+                samples = await asyncio.wait_for(queue.get(), timeout=1.0)
+            except asyncio.TimeoutError:
+                if not queue.empty():
+                    continue
+                if getattr(session, "state", "") != "connected":
+                    return
+                continue
+            ok = await self._publish_samples(session, samples, "omni")
+            if not ok:
+                return
+
+    def stop_playback(self, session: Any) -> None:
+        """Drop queued omni audio and abort the in-flight segment (barge-in)."""
+        session.playout_epoch = getattr(session, "playout_epoch", 0) + 1
+        queue = getattr(session, "audio_out_queue", None)
+        if queue is None:
+            return
+        dropped = 0
+        while True:
+            try:
+                queue.get_nowait()
+                dropped += 1
+            except asyncio.QueueEmpty:
+                break
+        if dropped:
+            log.info("Fluxer voice: dropped %d queued audio segment(s) [barge-in]", dropped)
+
     async def _publish_samples(self, session: VoiceSession, samples: array.array,
                                tag: str) -> bool:
         rtc = session.rtc
@@ -786,12 +866,18 @@ class VoiceController:
         started = self._clock()
         frames = audio_lib.pad_frames(samples)
         silence = array.array("h", [0] * audio_lib.FRAME_SAMPLES)
+        epoch = getattr(session, "playout_epoch", 0)
         try:
             for chunk in frames:
+                if getattr(session, "playout_epoch", 0) != epoch:
+                    log.info("Fluxer voice: playback aborted mid-segment [%s]", tag)
+                    return True
                 frame = rtc.AudioFrame.create(audio_lib.SAMPLE_RATE, 1, audio_lib.FRAME_SAMPLES)
                 audio_lib.put_samples(frame, chunk)
                 await session.source.capture_frame(frame)
             for _ in range(SILENCE_TAIL_FRAMES):
+                if getattr(session, "playout_epoch", 0) != epoch:
+                    return True
                 frame = rtc.AudioFrame.create(audio_lib.SAMPLE_RATE, 1, audio_lib.FRAME_SAMPLES)
                 audio_lib.put_samples(frame, silence)
                 await session.source.capture_frame(frame)

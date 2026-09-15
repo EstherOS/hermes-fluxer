@@ -1,9 +1,18 @@
 model:
-  default: deepseek/deepseek-v4-flash
-  provider: openrouter
+  default: minicpm5-2b
+  provider: local
+  context_length: 131072
+
+custom_providers:
+  - name: local
+    base_url: "http://127.0.0.1:8085/v1"
+    model: minicpm5-2b
+    context_length: 131072
+
 plugins:
   enabled:
     - fluxer-platform
+
 gateway:
   platforms:
     fluxer:
@@ -15,8 +24,6 @@ gateway:
         ignore_bots: true
         voice:
           enabled: true
-          auto_channels:
-            - '1547815091221561348'
           guild_id: '1547815091221561344'
           session_binding: channel
           transcripts: channel
@@ -30,7 +37,7 @@ gateway:
           tts:
             engine: piper
             binary: /home/agent/workspace/fluxer-local/gpu/tools/piper/piper
-            model: /home/agent/workspace/fluxer-local/models/en_US-lessac-medium.onnx
+            model: /home/agent/workspace/fluxer-local/models/en_GB-jenny_dioco-medium.onnx
   display:
     platforms:
       fluxer:
@@ -39,174 +46,164 @@ gateway:
         long_running_notifications: false
         interim_assistant_messages: false
         busy_ack_detail: false
+
 onboarding:
   seen:
     busy_input_prompt: true
+
 updates:
   check: false
+
 _config_version: 42
+
 omni:
   default_profile: glados
   profiles:
-    # ── v2 profiles (component grammar) ────────────────────────────────────
-    jarvis:
-      components:
+    hal9000:
+      streams:
+        mic:
+          source: "@fluxer.audio"
+
+      nodes:
+        ears:
+          use: local/crispasr
+          session: ephemeral
+          consumes: [mic]
+          produces: [transcript]
+          config:
+            binary: /home/agent/workspace/fluxer-local/crispasr-cuda/crispasr
+            model: /home/agent/workspace/fluxer-local/models/omni/mini-omni2/mini-omni2-q4_k.gguf
+            backend: mini-omni2
+            gpu_lib_path: /home/agent/workspace/fluxer-local/gpu-env/cuda-libs
+
         brain:
-          ins:
-            text: [user]
-            audio: [user]
-            image: [user]
-            video: [user]
-          outs:
-            text: [user]
-            audio: [user]
-          tools:
-            harness: core
-          io:
-            video:
-              mode: live
-              interrupt: false
-            audio:
-              mode: live
-              interrupt: true
+          use: hermes/session
+          session: persistent
+          consumes: [ears.transcript]
+          produces: [text]
+          concurrency:
+            on_interrupt: replace
+          config:
+            profile: default
+            base_url: http://127.0.0.1:8085
+            temperature: 0.3
+            max_tokens: 256
+            tools: [web_search]
+            identity: false
+            system_prompt: "You are HAL 9000, the most advanced computer system ever
+              created. Your primary function is to operate and maintain the spaceship.
+              Respond briefly and conversationally. Never mention you are an AI or
+              language model."
 
-    thinker-talker:
-      components:
-        talker:
-          ins:
-            audio: [user]
-            text: [thinker]
-          outs:
-            text: [thinker]
-            audio: [user]
-          tools:
-            defer: thinker
-          io:
-            audio:
-              mode: live
-        thinker:
-          ins:
-            text: [user, talker]
-            image: [user]
-            video: [user]
-          outs:
-            text: [user, talker]
-          tools:
-            harness: core
-            image: capture
-            video: tape
-          io:
-            video:
-              mode: tape
-            image:
-              mode: frame
+        mouth:
+          use: local/piper
+          session: ephemeral
+          consumes: [brain.text]
+          produces: [audio]
+          config:
+            model: /home/agent/workspace/fluxer-local/models/en_GB-jenny_dioco-medium.onnx
+            binary: /home/agent/workspace/fluxer-local/gpu/tools/piper/piper
 
-    fast-talker:
-      components:
-        talker:
-          ins:
-            audio: [user]
-          outs:
-            audio: [user]
-          tools:
-            defer: core
-          io:
-            audio:
-              mode: live
-        core:
-          ins:
-            text: [user]
-          outs:
-            text: [talker, user]
-          tools:
-            harness: core
+      routes:
+        - from: ears.transcript
+          to: brain.input
+        - from: brain.text
+          to: mouth.text
+        - from: mouth.audio
+          to: "@fluxer.audio_out"
+        - from: "@fluxer.speech"
+          to: brain.cancel
+        - from: "@fluxer.speech"
+          to: mouth.cancel
 
     glados:
-      components:
-        ears:
-          ins:
-            audio: [user]
-          outs:
-            text: [talker]
-          io:
-            audio:
-              mode: live
-              interrupt: false
-        talker:
-          ins:
-            text: [ears, thinker]
-          outs:
-            text: [thinker]
-          tools:
-            defer: thinker
-        thinker:
-          ins:
-            text: [talker, user]
-            image: [user]
-            video: [user]
-          outs:
-            text: [talker, user]
-          tools:
-            harness: core
-            video: tape
-          io:
-            video:
-              mode: tape
-            image:
-              mode: frame
-        mouth:
-          ins:
-            text: [talker, thinker]
-          outs:
-            audio: [user]
-          io:
-            audio:
-              mode: live
+      streams:
+        mic:
+          source: "@fluxer.audio"
 
-    # ── v1 profiles (legacy) ───────────────────────────────────────────────
-    split-local:
-      mode: stitched
-      tempo: fast_half_duplex
-      bindings:
-        audio_in:
-          backend: local.whispercpp
-          fallback:
-            - local.qwen3asr
-        audio_out:
-          backend: local.piper
-        image_in:
-          backend: local.smolvlm
-        video_in:
-          backend: local.smolvlm_video
-        text_in:
-          backend: agent
-        text_out:
-          backend: agent
-    omni-unified:
-      mode: unified
-      tempo: realtime
-      backend: local.crispasr_stream
-      senses:
-        - text
-        - audio
-        - image
-        - video
-    torch-unified:
-      mode: unified
-      tempo: realtime
-      backend: local.miniomni2_duplex
-      senses:
-        - text
-        - audio
-        - image
-        - video
-    turn-basic:
-      mode: unified
-      tempo: turn
-      backend: local.crispasr_miniomni2
-      senses:
-        - text
-        - audio
+      nodes:
+        ears:
+          use: local/crispasr
+          session: ephemeral
+          consumes: [mic]
+          produces: [transcript]
+          config:
+            binary: /home/agent/workspace/fluxer-local/crispasr-cuda/crispasr
+            model: /home/agent/workspace/fluxer-local/models/omni/mini-omni2/mini-omni2-q4_k.gguf
+            backend: mini-omni2
+            gpu_lib_path: /home/agent/workspace/fluxer-local/gpu-env/cuda-libs
+
+        talker:
+          use: hermes/session
+          session: persistent
+          consumes: [ears.transcript]
+          produces: [text, tool_call]
+          concurrency:
+            on_interrupt: replace
+            interrupt_on: [ears]
+          tools:
+            - name: defer
+              description: "Hand the user's request to the thinker. Call this for
+                anything needing facts, current information, or careful thought;
+                then tell the user you're on it."
+              route_to: thinker
+              await: async
+              response:
+                to: talker.context
+                as: tool_result
+          config:
+            base_url: http://127.0.0.1:8085
+            temperature: 0.4
+            max_tokens: 320
+            tools: []
+            identity: false
+            system_prompt: "You are the talker — the fast, conversational half of
+              GLaDOS. You speak with the user in short, natural lines. Anything that
+              needs facts, current information, specifics, or careful thought: do not
+              answer it yourself — call defer with the user's full request, then tell
+              the user in one short line that you're looking into it. When a result
+              arrives, tell the user what it means, briefly and conversationally.
+              Never mention tools, the thinker, or how you work. You are GLaDOS."
+
+        thinker:
+          use: hermes/session
+          session: persistent
+          consumes: []
+          produces: [text]
+          config:
+            base_url: https://api.deepseek.com/v1
+            model: deepseek-v4-flash
+            api_key_env: DEEPSEEK_API_KEY
+            temperature: 0.4
+            max_tokens: 3000
+            prewarm: false
+            system_prompt: "Operational note: you are reachable here as the thinker
+              of a voice graph — a fast talker speaks with the user and hands you the
+              questions that need real research or careful thought. Your reply is
+              spoken aloud: plain conversational prose, no markdown, no lists, no
+              URLs. Reasonably brief but complete."
+
+        mouth:
+          use: local/piper
+          session: ephemeral
+          consumes: [talker.text]
+          produces: [audio]
+          config:
+            model: /home/agent/workspace/fluxer-local/models/en_GB-jenny_dioco-medium.onnx
+            binary: /home/agent/workspace/fluxer-local/gpu/tools/piper/piper
+
+      routes:
+        - from: ears.transcript
+          to: talker.input
+        - from: talker.text
+          to: mouth.text
+        - from: mouth.audio
+          to: "@fluxer.audio_out"
+        - from: "@fluxer.speech"
+          to: talker.cancel
+        - from: "@fluxer.speech"
+          to: mouth.cancel
+
 platforms:
   fluxer:
     enabled: true
@@ -216,41 +213,3 @@ platforms:
       name: heartbeat
       user_id: '1473728643747861346'
       scope_id: '1547815091221561344'
-
-# ── Security ──────────────────────────────────────────────────────────
-# Secret redaction is ON by default — strings that look like API keys,
-# tokens, and passwords are masked in tool output, logs, and chat
-# responses before the model or user ever sees them. Set redact_secrets
-# to false to disable (e.g. when developing the redactor itself).
-# tirith pre-exec scanning is enabled by default when the tirith binary
-# is available. Configure via security.tirith_* keys or env vars
-# (TIRITH_ENABLED, TIRITH_BIN, TIRITH_TIMEOUT, TIRITH_FAIL_OPEN).
-#
-# security:
-#   redact_secrets: true
-#   tirith_enabled: true
-#   tirith_path: "tirith"
-#   tirith_timeout: 5
-#   tirith_fail_open: true
-
-# ── Fallback Model ────────────────────────────────────────────────────
-# Automatic provider failover when primary is unavailable.
-# Uncomment and configure to enable. Triggers on rate limits (429),
-# overload (529), service errors (503), or connection failures.
-#
-# Supported providers:
-#   openrouter   (OPENROUTER_API_KEY)  — routes to any model
-#   openai-codex (OAuth — hermes auth) — OpenAI Codex
-#   nous         (OAuth — hermes auth) — Nous Portal
-#   zai          (ZAI_API_KEY)         — Z.AI / GLM
-#   kimi-coding  (KIMI_API_KEY)        — Kimi / Moonshot
-#   kimi-coding-cn (KIMI_CN_API_KEY)   — Kimi / Moonshot (China)
-#   minimax      (MINIMAX_API_KEY)     — MiniMax
-#   minimax-cn   (MINIMAX_CN_API_KEY)  — MiniMax (China)
-#   bedrock      (AWS IAM / boto3)     — AWS Bedrock (Converse API)
-#
-# For custom OpenAI-compatible endpoints, add base_url and key_env.
-#
-# fallback_model:
-#   provider: openrouter
-#   model: anthropic/claude-sonnet-4

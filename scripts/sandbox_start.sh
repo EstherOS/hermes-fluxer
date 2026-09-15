@@ -16,12 +16,17 @@ except Exception:
     pass
 EOF
 )" 2>/dev/null; then echo "sandbox gateway appears to be running already"; exit 1; fi
-# ensure the ASR server is warm before gateway connects
-bash /home/agent/workspace/fluxer/scripts/asr_server_start.sh
+# ensure the GPU servers are warm before gateway connects
+bash /home/agent/workspace/fluxer/scripts/asr_server_start.sh &
+bash /home/agent/workspace/fluxer/scripts/llama_server_start.sh &
+wait
+# DeepSeek key for the thinker node — read from the host env file if present
+DS_KEY="$(grep -m1 '^DEEPSEEK_API_KEY=' /home/agent/.hermes/.env 2>/dev/null | cut -d= -f2- || true)"
 cd "$SANDBOX"
 env -i HOME=/home/agent \
     PATH="$REPO/venv/bin:/usr/local/bin:/usr/bin:/bin" \
     LANG=C.UTF-8 \
     HERMES_HOME="$HOME_S" \
+    DEEPSEEK_API_KEY="${DS_KEY:-}" \
     "$PY" "$REPO/hermes" gateway run -v > "$SANDBOX/gw.log" 2>&1 &
 echo "started (shell pid $!); log: $SANDBOX/gw.log"

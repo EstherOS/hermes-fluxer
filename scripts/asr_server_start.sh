@@ -3,13 +3,14 @@
 # Idempotent: health-check the port before starting; refuse a duplicate.
 set -u
 REPO=/home/agent/workspace/fluxer
+BIN=/home/agent/workspace/fluxer-local
 ASR_PORT=8105
 HDLR=/dev/null
 LOG="$REPO/status/asr-server.log"
 PID_FILE="$REPO/status/asr-server.pid"
-MODEL="$REPO/models/omni/qwen3-asr-0.6b/Qwen3-ASR-0.6B-Q8_0.gguf"
-MMPROJ="$REPO/models/omni/qwen3-asr-0.6b/mmproj-Qwen3-ASR-0.6B-Q8_0.gguf"
-LLAMA_SRV="$REPO/gpu/tools/llama-b10903/llama-server"
+MODEL="$BIN/models/omni/qwen3-asr-0.6b/Qwen3-ASR-0.6B-Q8_0.gguf"
+MMPROJ="$BIN/models/omni/qwen3-asr-0.6b/mmproj-Qwen3-ASR-0.6B-Q8_0.gguf"
+LLAMA_SRV="$BIN/gpu/tools/llama-b10903/llama-server"
 
 # Check if already listening
 if command -v curl &>/dev/null; then
@@ -40,7 +41,7 @@ if [ ! -f "$MMPROJ" ]; then
 fi
 
 # Source GPU env (Vulkan ICD, EGL)
-. "$REPO/gpu/gpu-env.sh"
+. "$BIN/gpu-env/gpu-env.sh"
 
 mkdir -p "$(dirname "$LOG")"
 echo "Starting ASR server on port ${ASR_PORT} (llama-server Vulkan, nice 10)..."

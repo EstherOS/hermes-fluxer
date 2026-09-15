@@ -1,291 +1,137 @@
-"""OmniVoiceBridge — route LiveKit audio through hermes_omni Session (component graph v2).
+"""OmniVoiceBridge — platform audio I/O for the omni engine graph.
 
-The bridge owns the VAD segmenter and drives the session's ``feed_audio()`` /
-``finalize_utterance()`` lifecycle.  Transcripts produced by the session's ASR
-pipeline are delivered to the adapter as ``MessageEvent`` so the agent sees
-them as a user turn.
+Routes LiveKit mic audio into the graph via ``@fluxer.audio`` and plays
+output from ``@fluxer.audio_out`` back to the LiveKit speaker track.
 
-The bridge does **not** own the LiveKit connection — it expects an active
-:class:`~fluxer.voice.controller.VoiceSession` that provides the ``rtc`` module,
-the ``room``, and a speaker ``AudioSource``.  The :class:`VoiceController` creates
-an instance per voice channel and calls :meth:`start` after connecting the room.
+The bridge owns audio I/O only — never the turn pipeline. Everything
+after audio enters the graph is the graph's responsibility, defined by
+profile routes.
 """
 
 from __future__ import annotations
 
-import array
 import asyncio
+import contextlib
 import logging
-from types import SimpleNamespace
-from typing import Any
+import tempfile
+from pathlib import Path
+from typing import Any, Callable
 
-from . import audio as audio_lib
-from .config import VoiceConfig
+from omnimaker.runtime import Session as OmniSession
+from omnimaker.types import Envelope
 
-log = logging.getLogger("fluxer.voice.omni_bridge")
+log = logging.getLogger(__name__)
+
+MIN_UTTERANCE_SEC = 0.3
 
 
 class OmniVoiceBridge:
-    """Connects a LiveKit voice channel to a hermes_omni :class:`~hermes_omni.session.Session`.
+    """Bridges a LiveKit voice room to an omni Session graph.
 
-    Parameters
-    ----------
-    adapter
-        The :class:`~fluxer.adapter.FluxerAdapter` instance (used for transcript
-        dispatch and authorization).
-    session
-        A *started* :class:`~hermes_omni.session.Session` whose backends are
-        already resolved and graph routes wired.
-    voice_session
-        The :class:`~fluxer.voice.controller.VoiceSession` for this guild/channel
-        (provides ``rtc``, ``room``, and the speaker ``AudioSource``).
-    config
-        :class:`VoiceConfig` — VAD params, transcript mode, etc.
+    Compatible with the controller's ``session.cascade`` slot.
     """
 
-    def __init__(
-        self,
-        adapter,
-        session,
-        voice_session,
-        config: VoiceConfig,
-    ) -> None:
+    def __init__(self, adapter: Any, omni_session: OmniSession,
+                 voice_session: Any, config: Any) -> None:
         self.adapter = adapter
-        self.session = session
+        self.omni_session = omni_session
         self.voice_session = voice_session
         self.config = config
 
-        self._closed = False
+        self._running = False
         self._tasks: set[asyncio.Task] = set()
+        self._output_queue: asyncio.Queue[bytes] = asyncio.Queue(maxsize=32)
+        self._turn_task: asyncio.Task | None = None
+        self._turn_id: str | None = None
 
-        # VAD segmenter
-        self.segmenter = audio_lib.VadSegmenter(
-            silence_ms=config.silence_ms,
-            min_utterance_ms=config.min_utterance_ms,
-            max_utterance_s=config.max_utterance_s,
-            energy_threshold=config.energy_threshold,
-        )
+        # Controller-set callbacks
+        self.on_audio_out: Callable[[bytes], None] | None = None
+        self.on_transcript: Callable[[str, str, str], None] | None = None
+        self.on_stop_playback: Callable[[], None] | None = None
 
-        # Last completed utterance (for unified file-based ASR flush)
-        self._last_utterance: Any = None
-
-        # Output audio pipeline: accumulate output-stream chunks, resample to
-        # 48 kHz, publish as 20 ms frames to the LiveKit AudioSource.
-        self._output_source: Any = None
-        self._output_buffer = array.array("h")
-
-        # Transcript dispatch — speaker context from the most recent mic track
-        self._speaker_id: str | None = None
-        self._speaker_name: str | None = None
-
-        # Persistent streaming session (CrispASR --stream mode)
-        self._stream_session: Any = None
-        self._stream_started: bool = False
-
-        self.stats: dict[str, int] = {
-            "frames": 0,
-            "utterances": 0,
-            "transcripts": 0,
-            "audio_out_chunks": 0,
-            "audio_out_frames": 0,
-            "vad_opens": 0,
-            "vad_closes": 0,
-            "interruptions": 0,
-        }
-
-    # ── lifecycle ────────────────────────────────────────────────────────────
+    # ── Lifecycle ──────────────────────────────────────────────────────
 
     def start(self) -> None:
-        """Activate the bridge.
-
-        Spawns an async task that: starts the omni Session, hooks transcript
-        delivery, kicks off the output pipeline, and — in unified streaming
-        mode — opens a persistent streaming session.
-        """
-        self._closed = False
-        self._spawn(self._start_async())
-        # Register this bridge as the cascade handler so the controller
-        # routes new participants' track_subscribed events to us.
-        self.voice_session.cascade = self
-        log.info(
-            "OmniVoiceBridge starting  guild=%s  channel=%s",
-            self.voice_session.guild_id,
-            self.voice_session.channel_id,
-        )
-
-    async def _start_async(self) -> None:
-        """Async bootstrap: start the omni Session, hook graph, start I/O."""
-        # 1. Start the omni Session (resolves backends, wires graph routes)
-        if not self.session._running:
-            await self.session.start()
-        # 2. Hook graph transcript delivery
-        self._hook_graph()
-        # 3. Output pipeline
+        if self._running:
+            return
+        self._running = True
+        self._spawn(self._run_async_start())
         self._spawn(self._run_output())
-        # 4. Unified streaming mode — open persistent session
-        if self._is_streaming_mode():
-            await self._run_stream_session()
-        # 5. Subscribe to existing participants' tracks
-        try:
-            from livekit.rtc import TrackKind
-
-            AUDIO_KIND = TrackKind.KIND_AUDIO
-        except Exception:
-            AUDIO_KIND = "audio"
-        try:
-            room = getattr(self.voice_session, "room", None)
-            if room is not None:
-                participants = getattr(room, "remote_participants", None) or {}
-                for pid, participant in participants.items():
-                    pubs = list(
-                        getattr(participant, "track_publications", None) or {}.values()
-                    )
-                    for pub in pubs:
-                        if getattr(pub, "kind", None) == AUDIO_KIND:
-                            track = getattr(pub, "track", None)
-                            if track is not None:
-                                self.on_track_subscribed(track, pub, participant)
-        except Exception as exc:
-            log.warning(
-                "OmniVoiceBridge: scanning existing participants failed: %s", exc
-            )
-        log.info(
-            "OmniVoiceBridge started  guild=%s  channel=%s",
-            self.voice_session.guild_id,
-            self.voice_session.channel_id,
-        )
 
     async def stop(self) -> None:
-        """Deactivate the bridge, cancel every background task, flush output."""
-        self._closed = True
-        tasks = list(self._tasks)
-        for task in tasks:
+        self._running = False
+        for task in list(self._tasks):
             task.cancel()
-        for task in tasks:
-            try:
-                await task
-            except (asyncio.CancelledError, Exception):
-                pass
-        self._tasks.clear()
-        self._output_buffer = array.array("h")
-        log.info(
-            "OmniVoiceBridge stopped  guild=%s  channel=%s",
-            self.voice_session.guild_id,
-            self.voice_session.channel_id,
-        )
+        # Detach output handler from binding
+        binding = self.omni_session.get_binding("fluxer")
+        if binding and hasattr(binding, 'detach_output_handler'):
+            binding.detach_output_handler(self.omni_session.id)
+        await self.omni_session.stop()
 
     def _spawn(self, coro) -> asyncio.Task:
-        task = asyncio.ensure_future(coro)
+        task = asyncio.create_task(coro)
         self._tasks.add(task)
         task.add_done_callback(self._tasks.discard)
         return task
 
-    # ── graph hooking ─────────────────────────────────────────────────────
+    async def _run_async_start(self) -> None:
+        try:
+            await self.omni_session.start()
+            log.info("OmniVoiceBridge: session %s started", self.omni_session.id)
+            # Wire @fluxer.audio_out → our queue
+            binding = self.omni_session.get_binding("fluxer")
+            if binding and hasattr(binding, 'attach_output_handler'):
+                await binding.open(self.omni_session.id, {})
+                binding.attach_output_handler(self.omni_session.id, self._push_output)
+        except Exception as exc:
+            log.error("OmniVoiceBridge: session start failed: %s", exc)
 
-    def _hook_graph(self) -> None:
-        """Hook the session's graph-mode transcript callback so the bridge
-        can deliver transcripts to the adapter.
+    # ── Input: LiveKit AudioStream → VAD → WAV → graph ────────────────
 
-        Sets ``session._graph_transcript_callback`` — the session calls it
-        from :meth:`finalize_utterance` when a transcript is ready.
-        """
-        async def _on_graph_transcript(text: str) -> None:
-            await self._deliver_transcript(text)
-
-        self.session._graph_transcript_callback = _on_graph_transcript
-
-    # ── inbound: LiveKit mic → VAD → session.feed_audio() ───────────────────
-
-    def on_track_subscribed(
-        self, track, publication=None, participant=None
-    ) -> None:
-        """Start reading a LiveKit audio track.
-
-        Only processes audio tracks; video and subtitle tracks are ignored.
-        Extracts speaker identity from the LiveKit participant.
-        """
+    def on_track_subscribed(self, track: Any, publication: Any,
+                             participant: Any) -> None:
+        """Subscribe to a remote participant's mic track."""
         rtc = getattr(self.voice_session, "rtc", None)
         if rtc is None:
+            log.warning("OmniVoiceBridge: on_track_subscribed but voice_session.rtc is None")
             return
-
-        # Filter to audio tracks only
         try:
             kind = getattr(track, "kind", None)
             if kind is not None and hasattr(rtc, "TrackKind"):
                 if kind != rtc.TrackKind.KIND_AUDIO:
-                    log.debug("OmniVoiceBridge: skipping non-audio track %s", kind)
                     return
         except Exception:
-            pass  # unknown stub shapes: assume audio
+            pass
+        from fluxer.voice.audio import SAMPLE_RATE
+        pid = getattr(participant, "identity", "?")
+        log.info("OmniVoiceBridge: starting AudioStream for %s", pid)
+        stream = rtc.AudioStream(track, sample_rate=SAMPLE_RATE, num_channels=1)
+        self._spawn(self._read_stream(stream, participant))
 
-        from .cascade import speaker_from_identity
+    async def _read_stream(self, stream: Any, participant: Any) -> None:
+        """Read AudioStream frames, run VAD, feed utterances to graph."""
+        from fluxer.voice.audio import VadSegmenter, write_wav
 
-        identity = getattr(participant, "identity", "") if participant else ""
-        speaker_id, speaker_name = speaker_from_identity(identity)
-        self._speaker_id = speaker_id
-        self._speaker_name = speaker_name
-
-        log.info(
-            "OmniVoiceBridge: subscribed audio track for %s (%s)",
-            speaker_name or speaker_id, speaker_id,
-        )
-        self._spawn(self._read_mic_track(track, speaker_id, speaker_name))
-
-    async def _read_mic_track(
-        self, track, speaker_id: str, speaker_name: str,
-    ) -> None:
-        """Read PCM frames from a LiveKit ``AudioStream`` in a continuous loop.
-
-        Every received 20 ms frame (48 kHz mono int16):
-        1. Is fed to :meth:`session.feed_audio` for ASR.
-        2. Is routed through :attr:`segmenter` for energy-based VAD.
-        3. Drives utterance finalization on VAD close.
-        """
-        rtc = self.voice_session.rtc
-        if rtc is None:
-            return
-
-        stream = rtc.AudioStream(
-            track, sample_rate=audio_lib.SAMPLE_RATE, num_channels=1,
-        )
-
-        # Track VAD speaking state across frames
-        was_speaking = self.segmenter.speaking
-
+        segmenter = VadSegmenter()
         try:
             async for event in stream:
-                if self._closed:
+                if not self._running:
                     break
-
                 frame = getattr(event, "frame", event)
                 data = bytes(getattr(frame, "data", b""))
-                self.stats["frames"] += 1
-
-                # 1. Feed raw PCM to the session
-                await self._safe_feed_audio(data)
-
-                # 2. VAD segmentation
-                utterances = self.segmenter.feed(data)
-                now_speaking = self.segmenter.speaking
-
-                # 2a. VAD open: speech started
-                if not was_speaking and now_speaking:
-                    await self._on_vad_open()
-
-                # 2b. VAD close: utterance completed
-                for _utterance in utterances:
-                    self._last_utterance = _utterance
-                    await self._on_vad_close()
-
-                was_speaking = now_speaking
-
+                if not data:
+                    continue
+                for utterance in segmenter.feed(data):
+                    await self._feed_utterance(utterance, participant)
+                if segmenter.take_onset():
+                    self._on_speech_onset()
+            final = segmenter.flush()
+            if final is not None:
+                await self._feed_utterance(final, participant)
         except asyncio.CancelledError:
             raise
         except Exception as e:
-            log.warning(
-                "OmniVoiceBridge: mic stream ended for %s: %s",
-                speaker_name or speaker_id, e,
-            )
+            log.debug("OmniVoiceBridge: audio stream ended: %s", e)
         finally:
             aclose = getattr(stream, "aclose", None)
             if callable(aclose):
@@ -294,340 +140,177 @@ class OmniVoiceBridge:
                 except Exception:
                     pass
 
-    # ── VAD ─────────────────────────────────────────────────────────────────
-
-    async def _on_vad_open(self) -> None:
-        """Speech started — start ASR and begin feeding audio."""
-        self.stats["vad_opens"] += 1
-        await self.session.start_asr()
-        log.info("OmniVoiceBridge: VAD open → start_asr")
-
-    async def _on_vad_close(self) -> None:
-        """Speech ended — finalize the utterance.
-
-        Calls ``session.finalize_utterance()`` which signals end-of-stream
-        to the ASR backend, waits for the transcript, and delivers it via
-        the graph transcript callback.
-        """
-        self.stats["vad_closes"] += 1
-        await self.session.finalize_utterance()
-        # Flush the streaming session if present
-        if (
-            self._stream_session is not None
-            and hasattr(self._stream_session, "flush")
-        ):
-            await self._safe_flush(self._stream_session)
-
-    # ── session.feed_audio() wrapper ────────────────────────────────────────
-
-    async def _safe_feed_audio(self, data: bytes) -> None:
-        """Forward PCM bytes to the session (and streaming backend if active)."""
-        # 1. Feed the session
-        try:
-            await self.session.feed_audio(data)
-        except Exception as e:
-            log.warning("OmniVoiceBridge: feed_audio failed: %s", e)
-        # 2. If a persistent streaming session is open and started, feed raw PCM to it
-        if self._stream_session is not None and self._stream_started:
-            try:
-                await self._stream_session.feed_audio(data)
-            except Exception as e:
-                log.warning("OmniVoiceBridge: stream feed_audio failed: %s", e)
-
-    @staticmethod
-    async def _safe_flush(session) -> None:
-        """Call ``flush()`` on a streaming session with error isolation."""
-        try:
-            await session.flush()
-        except Exception as e:
-            log.warning("OmniVoiceBridge: flush failed: %s", e)
-
-    # ── persistent streaming session (unified mode, no temp files) ───────────
-
-    def _is_streaming_mode(self) -> bool:
-        """True when the session has a realtime backend for streaming."""
-        return getattr(self.session, "_realtime_backend", None) is not None
-
-    async def _run_stream_session(self) -> None:
-        """Open a persistent streaming session on the realtime backend.
-
-        One subprocess, one model load.  Raw PCM chunks are piped via
-        ``feed_audio()`` into the binary's stdin.  Transcripts (JSON-Line
-        ``final`` events) are read from ``receive()`` and delivered to the
-        adapter via ``_graph_transcript_callback``.
-        """
-        backend = getattr(self.session, "_realtime_backend", None)
-        if backend is None:
+    async def _feed_utterance(self, utterance: Any, participant: Any) -> None:
+        """Write utterance WAV, feed into graph via @fluxer.audio."""
+        if utterance.seconds < MIN_UTTERANCE_SEC:
             return
+        tmp_dir = Path(tempfile.mkdtemp(prefix="omni-utt-"))
+        wav_path = tmp_dir / "utt.wav"
         try:
-            self._stream_session = await backend.open_session()
-            await self._stream_session.open()
-            self._stream_started = True
-            log.info("OmniVoiceBridge: streaming session opened on %s", backend.name)
+            from fluxer.voice.audio import write_wav
+            write_wav(wav_path, utterance.samples, rate=48000)
+            wav_bytes = wav_path.read_bytes()
         except Exception as exc:
-            log.warning(
-                "OmniVoiceBridge: failed to open streaming session: %s", exc
-            )
-            self._stream_session = None
+            log.warning("OmniVoiceBridge: WAV write failed: %s", exc)
+            self._rmtree(tmp_dir)
             return
+        # Feed into graph as a single envelope
+        env = Envelope(
+            type="audio",
+            payload=wav_bytes,
+            session_id=self.omni_session.id,
+            turn_id="",
+            execution_id="",
+            source="@fluxer.audio",
+        )
+        # Feed as a tracked task so the mic read loop keeps running (barge-in
+        # detection depends on it); interrupt() and stop() cancel this task.
+        self._turn_task = self._spawn(self._run_feed(env))
+        self._rmtree(tmp_dir)
 
+    async def _run_feed(self, env: Envelope) -> None:
         try:
-            async for part in self._stream_session.receive():
-                if self._closed:
-                    break
-                if part.is_text:
-                    text = part.text_of()
-                    if text:
-                        self.stats["transcripts"] += 1
-                        # Deliver via graph transcript callback
-                        if self.session._graph_transcript_callback is not None:
-                            await self.session._graph_transcript_callback(text)
-                else:
-                    audio_data = part.data
-                    if isinstance(audio_data, bytes) and audio_data:
-                        try:
-                            await self.session._output_queue.put(audio_data)
-                        except Exception as e:
-                            log.warning(
-                                "OmniVoiceBridge: audio output push failed: %s", e,
-                            )
+            self._turn_id = await self.omni_session.feed("@fluxer.audio", env)
         except asyncio.CancelledError:
             raise
         except Exception as exc:
-            log.warning(
-                "OmniVoiceBridge: streaming session output ended: %s", exc
-            )
-        finally:
-            try:
-                await self._stream_session.close()
-            except Exception:
-                pass
-            self._stream_session = None
-            self._stream_started = False
-            log.info("OmniVoiceBridge: streaming session closed")
+            log.error("OmniVoiceBridge: graph feed failed: %s", exc)
 
-    # ── outbound: session.output_stream() → LiveKit speaker ─────────────────
+    def _on_speech_onset(self) -> None:
+        """User started speaking — flush local playback and signal the graph.
+
+        The graph decides what stops (routes from ``@fluxer.speech`` to
+        control endpoints, e.g. ``brain.cancel`` / ``mouth.cancel``); the
+        bridge flushes only its own playback queue so the speaker goes quiet
+        immediately.
+        """
+        self._spawn(self._signal_speech())
+
+    async def _signal_speech(self) -> None:
+        dropped = 0
+        while True:
+            try:
+                self._output_queue.get_nowait()
+                dropped += 1
+            except asyncio.QueueEmpty:
+                break
+        if callable(self.on_stop_playback):
+            try:
+                self.on_stop_playback()
+            except Exception:
+                log.exception("OmniVoiceBridge: stop_playback callback failed")
+        try:
+            await self.omni_session.feed("@fluxer.speech", Envelope(
+                type="speech",
+                payload=None,
+                session_id=self.omni_session.id,
+                turn_id="",
+                execution_id="",
+                source="@fluxer.speech",
+            ))
+        except Exception as exc:
+            log.error("OmniVoiceBridge: speech signal feed failed: %s", exc)
+        log.info("OmniVoiceBridge: speech onset — flushed %d segment(s), graph signalled",
+                 dropped)
+
+    async def interrupt(self, reason: str = "barge") -> None:
+        """Stop the in-flight turn and drop queued playback (barge-in).
+
+        Uses the engine's interrupt verb (cancels the turn's executions —
+        adapter cleanup runs: streams close, subprocesses die); falls back to
+        cancelling the turn task if the engine call fails. Queued output
+        segments are dropped via the controller's stop_playback callback.
+        """
+        try:
+            cancelled = await self.omni_session.interrupt()
+            log.info("OmniVoiceBridge: interrupted %d execution(s) (%s)",
+                     cancelled, reason)
+        except Exception:
+            log.exception("OmniVoiceBridge: engine interrupt failed — cancelling turn task")
+            task = self._turn_task
+            self._turn_task = None
+            if task is not None and not task.done():
+                task.cancel()
+                with contextlib.suppress(asyncio.CancelledError, Exception):
+                    await task
+
+        dropped = 0
+        while True:
+            try:
+                self._output_queue.get_nowait()
+                dropped += 1
+            except asyncio.QueueEmpty:
+                break
+        if callable(self.on_stop_playback):
+            try:
+                self.on_stop_playback()
+            except Exception:
+                log.exception("OmniVoiceBridge: stop_playback callback failed")
+        log.info("OmniVoiceBridge: interrupted (%s) — turn cancelled, %d segment(s) dropped",
+                 reason, dropped)
+
+    # ── Output: graph @fluxer.audio_out → queue → LiveKit speaker ──────
+
+    def _push_output(self, envelope: Envelope) -> None:
+        """Called by FluxerBinding when audio hits @fluxer.audio_out."""
+        if isinstance(envelope.payload, bytes):
+            try:
+                self._output_queue.put_nowait(envelope.payload)
+            except asyncio.QueueFull:
+                log.warning("OmniVoiceBridge: output queue full")
 
     async def _run_output(self) -> None:
-        """Background task: drain ``session.output_stream()`` and publish audio
-        frames to the LiveKit ``AudioSource``.
-        """
-        FRAME_CAP = audio_lib.FRAME_SAMPLES * 16000 // audio_lib.SAMPLE_RATE  # 320
-
-        try:
-            async for chunk in self.session.output_stream():
-                if self._closed or not chunk:
-                    break
-
-                self.stats["audio_out_chunks"] += 1
-
-                samples = audio_lib.bytes_to_samples(chunk)
-                self._output_buffer.extend(samples)
-
-                while len(self._output_buffer) >= FRAME_CAP:
-                    frame_16k = self._output_buffer[:FRAME_CAP]
-                    del self._output_buffer[:FRAME_CAP]
-
-                    frame_48k = audio_lib.resample(
-                        frame_16k, 16000, audio_lib.SAMPLE_RATE,
-                    )
-                    await self._publish_frame(frame_48k)
-
-        except asyncio.CancelledError:
-            raise
-        except Exception as e:
-            log.warning("OmniVoiceBridge: output stream error: %s", e)
-        finally:
-            if self._output_buffer:
-                remaining = self._output_buffer
-                self._output_buffer = array.array("h")
-                rem_48k = audio_lib.resample(
-                    remaining, 16000, audio_lib.SAMPLE_RATE,
-                )
-                for frame in audio_lib.pad_frames(rem_48k):
-                    await self._publish_frame(frame)
-
-    async def _publish_frame(self, samples: array.array) -> None:
-        """Publish one 48 kHz frame to the LiveKit ``AudioSource``."""
-        source = self._output_source or self.voice_session.source
-
-        if source is None:
-            source = await self._ensure_output_source()
-            if source is None:
-                return
-
-        rtc = self.voice_session.rtc
-        if rtc is None:
-            return
-
-        try:
-            frame = rtc.AudioFrame.create(
-                audio_lib.SAMPLE_RATE, 1, len(samples),
-            )
-            audio_lib.put_samples(frame, samples)
-            await source.capture_frame(frame)
-            self.stats["audio_out_frames"] += 1
-        except Exception as e:
-            log.warning("OmniVoiceBridge: publish frame failed: %s", e)
-
-    async def _ensure_output_source(self) -> Any:
-        """Create a LiveKit ``AudioSource`` and publish the speaker track.
-
-        Mirrors :meth:`VoiceController._ensure_publisher`.  Stores the source
-        on ``voice_session`` so the Bridge and the adapter's ``speak()`` path
-        (when it falls back to legacy TTS) can share it.
-        """
-        rtc = self.voice_session.rtc
-        room = self.voice_session.room
-        if rtc is None or room is None:
-            return None
-
-        try:
-            source = rtc.AudioSource(audio_lib.SAMPLE_RATE, 1)
-            track = rtc.LocalAudioTrack.create_audio_track("hermes-voice", source)
-            options = rtc.TrackPublishOptions()
-            options.source = rtc.TrackSource.SOURCE_MICROPHONE
-
-            publication = await asyncio.wait_for(
-                room.local_participant.publish_track(track, options),
-                timeout=15.0,
-            )
-
-            self.voice_session.source = source
-            self.voice_session.track = track
-            self.voice_session.publication = publication
-            self.voice_session.publication_sid = str(
-                getattr(publication, "sid", "") or ""
-            ) or None
-            self._output_source = source
-
-            log.info(
-                "OmniVoiceBridge: published speaker track sid=%s",
-                self.voice_session.publication_sid,
-            )
-            return source
-
-        except Exception as e:
-            log.warning("OmniVoiceBridge: publish speaker track failed: %s", e)
-            return None
-
-    # ── transcript delivery ─────────────────────────────────────────────────
-
-    async def _deliver_transcript(self, text: str) -> None:
-        """Deliver the user's transcript as a ``MessageEvent`` to the adapter.
-
-        Mirrors :meth:`~fluxer.voice.cascade.VoiceCascade._dispatch`:
-
-        1. If ``voice.transcripts == \\\"channel\\\"``, echo the text into the bound
-           channel.
-        2. If the adapter has a ``_voice_input_callback`` (core voice-input
-           path), call it directly.
-        3. Otherwise build a synthetic ``MessageEvent`` and hand it to
-           ``adapter.handle_message``.
-        """
-        text = (text or "").strip()
-        if not text:
-            return
-
-        self.stats["transcripts"] += 1
-
-        speaker_id = self._speaker_id or "?"
-        speaker_name = self._speaker_name or speaker_id
-
-        log.info(
-            "OmniVoiceBridge: transcript from %s  (guild=%s): %.120s",
-            speaker_name,
-            self.voice_session.guild_id,
-            text,
-        )
-
-        # Echo to the bound chat channel when configured
-        if self.config.transcripts == "channel":
-            await self._echo_transcript(text, speaker_id)
-
-        adapter = self.adapter
-
-        # Core voice-input callback path (``/voice join`` full pipeline)
-        callback = getattr(adapter, "_voice_input_callback", None)
-        if callable(callback):
+        """Drain output queue, push PCM to LiveKit speaker track."""
+        while self._running:
             try:
-                guild_id = int(self.voice_session.guild_id)
-                user_id = (
-                    int(speaker_id)
-                    if str(speaker_id).isdigit()
-                    else speaker_id
-                )
-                await callback(
-                    guild_id=guild_id, user_id=user_id, transcript=text,
-                )
-            except Exception as e:
-                log.warning(
-                    "OmniVoiceBridge: voice input callback failed: %s", e,
-                )
-            return
+                pcm = await asyncio.wait_for(self._output_queue.get(), timeout=0.5)
+            except asyncio.TimeoutError:
+                continue
 
-        # Standard MessageEvent dispatch
-        source = self.voice_session.build_source(
-            adapter, speaker_id, speaker_name,
-        )
-        event = self._build_event(
-            text=text,
-            source=source,
-            guild_id=self.voice_session.guild_id,
-        )
-        try:
-            await adapter.handle_message(event)
-        except Exception as e:
+            # If the controller wired a callback, use it
+            if self.on_audio_out:
+                try:
+                    result = self.on_audio_out(pcm)
+                    if result is not None and hasattr(result, '__await__'):
+                        await result
+                    continue
+                except Exception as exc:
+                    log.error("OmniVoiceBridge: audio output error: %s", exc)
+                    continue
+
+            # No callback: push directly to the session's LiveKit AudioSource
+            source = getattr(self.voice_session, "source", None)
+            if source is not None:
+                try:
+                    import array
+                    samples = array.array("h", memoryview(pcm).cast("h"))
+                    from fluxer.voice.audio import FRAME_SAMPLES, pad_frames
+                    for frame in pad_frames(samples):
+                        source.capture_frame(frame)
+                    continue
+                except Exception as exc:
+                    log.warning("OmniVoiceBridge: direct push failed: %s", exc)
+                    continue
+
+            # Neither callback nor AudioSource — audio lost
             log.warning(
-                "OmniVoiceBridge: handle_message failed for transcript: %s", e,
+                "OmniVoiceBridge: audio output lost — no on_audio_out callback "
+                "and no voice_session.source. Caller must set on_audio_out, or "
+                "the session must have an AudioSource after join."
             )
 
-    async def _echo_transcript(self, text: str, speaker_id: str) -> None:
-        """Post the transcript into the bound text channel (transcripts mode)."""
-        chat_id = self.voice_session.echo_chat_id
-        rest = getattr(self.adapter, "_rest", None)
-        if not chat_id or rest is None:
-            return
-        try:
-            await rest.create_message(
-                chat_id,
-                content=f"**[Voice]** <@{speaker_id}>: {text[:1900]}",
-            )
-        except Exception as e:
-            log.warning(
-                "OmniVoiceBridge: transcript echo failed in %s: %s",
-                chat_id, e,
-            )
+    # ── Test seam ──────────────────────────────────────────────────────
+
+    async def feed_pcm(self, pcm_bytes: bytes) -> None:
+        """Direct PCM injection for offline testing (bypasses LiveKit)."""
+        from fluxer.voice.audio import VadSegmenter
+        segmenter = VadSegmenter()
+        for utterance in segmenter.feed(pcm_bytes):
+            await self._feed_utterance(utterance, None)
+
+    # ── Helper ─────────────────────────────────────────────────────────
 
     @staticmethod
-    def _build_event(
-        *, text: str, source, guild_id: str,
-    ) -> Any:
-        """Build a synthetic ``MessageEvent`` for the agent pipeline.
-
-        Lazy-imports ``MessageEvent`` so a minimal import of this module
-        doesn't pull in the gateway package.
-        """
-        from gateway.platforms.event import MessageEvent, MessageType
-
-        return MessageEvent(
-            text=text,
-            message_type=MessageType.TEXT,
-            source=source,
-            raw_message=SimpleNamespace(
-                guild_id=str(guild_id), guild=None,
-            ),
-        )
-
-    # ── snapshot ────────────────────────────────────────────────────────────
-
-    def snapshot(self) -> dict[str, Any]:
-        """Current stats and bridge state."""
-        out = dict(self.stats)
-        out.update({
-            "closed": self._closed,
-            "segmenter_speaking": getattr(self.segmenter, "speaking", False),
-            "speaker_id": self._speaker_id or "",
-            "output_buffer_samples": len(self._output_buffer),
-        })
-        return out
+    def _rmtree(path: Path) -> None:
+        import shutil
+        shutil.rmtree(path, ignore_errors=True)
