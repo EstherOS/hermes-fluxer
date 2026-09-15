@@ -187,9 +187,11 @@ class VadSegmenter:
 
     def __init__(self, *, silence_ms: int = 900, min_utterance_ms: int = 300,
                  max_utterance_s: float = 30.0, energy_threshold: float = 400.0,
-                 pre_roll_ms: int = 200, frame_ms: int = FRAME_MS) -> None:
+                 pre_roll_ms: int = 200, frame_ms: int = FRAME_MS,
+                 onset_ms: int = 300) -> None:
         self.silence_ms = max(1, int(silence_ms))
         self.min_utterance_ms = max(0, int(min_utterance_ms))
+        self.onset_ms = max(0, int(onset_ms))
         self.max_utterance_s = max(1.0, float(max_utterance_s))
         self.energy_threshold = float(energy_threshold)
         self.frame_ms = max(1, int(frame_ms))
@@ -201,6 +203,8 @@ class VadSegmenter:
         self._speaking = False
         self._silence_run_ms = 0
         self._voiced_ms = 0
+        self._onset_reached = False
+        self._onset_consumed = False
         self.dropped_short = 0
 
     # -- public ----------------------------------------------------------
@@ -228,6 +232,17 @@ class VadSegmenter:
     def speaking(self) -> bool:
         return self._speaking
 
+    def take_onset(self) -> bool:
+        """Consume the speech-onset edge — True once per utterance.
+
+        Fires when voiced audio has sustained for ``onset_ms``: long enough
+        to filter coughs and transients, short enough for barge-in.
+        """
+        if self._onset_reached and not self._onset_consumed:
+            self._onset_consumed = True
+            return True
+        return False
+
     # -- internals -------------------------------------------------------
 
     def _process_frame(self, frame: array.array) -> Optional[Utterance]:
@@ -254,6 +269,8 @@ class VadSegmenter:
                 self._silence_run_ms += self.frame_ms
             if self._silence_run_ms >= self.silence_ms:
                 return self._finish(reason="silence")
+        if not self._onset_reached and self._voiced_ms >= self.onset_ms:
+            self._onset_reached = True
         if self._voiced_ms >= int(self.max_utterance_s * 1000):
             return self._finish(reason="max_length")
         return None
@@ -279,3 +296,5 @@ class VadSegmenter:
         self._speaking = False
         self._silence_run_ms = 0
         self._voiced_ms = 0
+        self._onset_reached = False
+        self._onset_consumed = False

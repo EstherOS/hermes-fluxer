@@ -40,10 +40,10 @@ from gateway.platforms.event import MessageEvent, MessageType
 _omni_imported = False
 _omni_import_error: str | None = None
 try:
-    import hermes_omni
-    from hermes_omni import resolve_profile, register_backend
-    from hermes_omni.backends.registry import get_backend, list_backends
-    from hermes_omni.types import SenseBinding, Part
+    import omnimaker
+    from omnimaker import resolve_profile, register_backend
+    from omnimaker.backends.registry import get_backend, list_backends
+    from omnimaker.types import SenseBinding, Part
 
     _omni_imported = True
 except ImportError:

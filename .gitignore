@@ -4,6 +4,7 @@ __pycache__/
 *.egg-info/
 .venv/
 .ruff_cache/
+.pytest_cache/
 
 # Sandbox runtime state (not source)
 sandbox/hermes-home/auth.json
@@ -42,7 +43,9 @@ sandbox/*.json
 
 # Generated evidence/status
 status/*.log
+status/*.pid
 status/*-evidence/
+status/delegation-done
 sandbox/hermes-home/state/
 
 # OS

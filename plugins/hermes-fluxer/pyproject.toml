@@ -13,7 +13,7 @@ dependencies = [
     "aiohttp",
     "websockets",
 ]
-optional-dependencies = {realtime = ["hermes-omni"]}
+optional-dependencies = {realtime = ["omnimaker"]}
 
 [tool.setuptools.package-dir]
 "" = "src"
