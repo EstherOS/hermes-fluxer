@@ -1,6 +1,6 @@
-# Hermes-Fluxer — Fluxer voice platform for Omnimaler
+# Hermes-Fluxer — Fluxer voice platform for Omnimaker
 
-This plugin integrates Omnimaler with the Fluxer voice platform. It provides platform bindings (`@fluxer.*`) and local backends for ASR and TTS.
+This plugin integrates Omnimaker with the Fluxer voice platform. It provides platform bindings (`@fluxer.*`) and local backends for ASR and TTS.
 
 ## Components
 

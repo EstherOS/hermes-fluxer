@@ -1,3 +1,3 @@
-"""Omnimaler-Hermes — Hermes agent adapters for Omnimaler."""
+"""Omnimaker-Hermes — Hermes agent adapters for Omnimaker."""
 
 from .session import HermesSessionBackend, HermesHarnessBackend

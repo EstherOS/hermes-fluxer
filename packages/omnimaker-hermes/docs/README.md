@@ -1,6 +1,6 @@
-# Omnimaler-Hermes — Hermes agent adapters for Omnimaler
+# Omnimaker-Hermes — Hermes agent adapters for Omnimaker
 
-This package provides adapters that wire Omnimaler nodes into Hermes agent sessions. It depends on both `omnimaker` (for the graph runtime) and the Hermes agent library (for session creation and tool execution).
+This package provides adapters that wire Omnimaker nodes into Hermes agent sessions. It depends on both `omnimaker` (for the graph runtime) and the Hermes agent library (for session creation and tool execution).
 
 ## Adapters
 
