@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Stage the fluxer plugin for the LIVE gateway. Does NOT restart anything.
 set -eu
-SRC=/home/agent/workspace/fluxer/plugin-src/fluxer
+SRC=/home/agent/workspace/fluxer/plugins/hermes-fluxer/src/fluxer
 DEST=/home/agent/.hermes/plugins/fluxer
 REPO=/home/agent/.hermes/hermes-agent
 PY="$REPO/venv/bin/python"
