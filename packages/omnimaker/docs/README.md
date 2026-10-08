@@ -1,6 +1,6 @@
-# Omnimaler — streaming message graph engine
+# Omnimaker — streaming message graph engine
 
-Omnimaler is a **streaming message graph runtime**. It wires opaque nodes together into a directed graph and moves typed envelopes between those nodes according to configurable transport semantics. The engine does not know what a "talker" or "thinker" is — those are properties of the graph the author built, not concepts the engine recognizes.
+Omnimaker is a **streaming message graph runtime**. It wires opaque nodes together into a directed graph and moves typed envelopes between those nodes according to configurable transport semantics. The engine does not know what a "talker" or "thinker" is — those are properties of the graph the author built, not concepts the engine recognizes.
 
 ## Core primitives
 
