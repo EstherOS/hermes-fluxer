@@ -34,6 +34,8 @@ from gateway.platforms._shared import get_scoped_secret as _get_scoped_secret
 from gateway.platforms.base import BasePlatformAdapter, SendResult, classify_send_error
 from gateway.platforms.event import MessageEvent, MessageType
 
+logger = logging.getLogger(__name__)
+
 # ── backward-compatible omni import ───────────────────────────────────────────
 # Prefer the migrated hermes_omni package; fall back to the local .omni modules
 # so the adapter works both in a monorepo layout and a standalone installation.
@@ -66,8 +68,6 @@ from .voice import try_livekit
 from .voice.config import VoiceConfig, parse_voice_config
 from .voice.controller import VoiceChannelRef, VoiceController
 from .adapter_omni_mixin import OmniAdapterMixin
-
-logger = logging.getLogger(__name__)
 
 # Events routed to the voice controller (wave 3, spec §6-W3).
 _VOICE_EVENT_TYPES = frozenset(
