@@ -58,3 +58,31 @@ def test_module_meta_integrity_under_foreign_name():
     finally:
         for k in [k for k in list(sys.modules) if k == name or k.startswith(name + ".")]:
             del sys.modules[k]
+
+
+def test_loads_text_only_when_omni_engine_missing():
+    """A bare plugin copy (no ``omnimaker`` installed) must still load — text-only mode.
+
+    Regression: ``adapter.py`` logged via the module ``logger`` before it was
+    defined, so the no-engine fallback path raised ``NameError`` and plugin
+    registration died instead of degrading gracefully.
+    """
+    name = "fluxer_noomni_probe_pkg"
+    # Simulate a box without the omni engine: drop every cached omnimaker
+    # module — an already-imported submodule would otherwise satisfy the
+    # fallback import even with the top-level package halted.
+    saved = {k: v for k, v in sys.modules.items() if k == "omnimaker" or k.startswith("omnimaker.")}
+    for k in list(saved):
+        del sys.modules[k]
+    sys.modules["omnimaker"] = None  # any new omnimaker import -> ImportError
+    try:
+        mod = _load_foreign(name)
+        adapter = importlib.import_module(f"{name}.adapter")
+        assert adapter._omni_imported is False
+        assert "omnimaker" in (adapter._omni_import_error or "").lower()
+        assert callable(getattr(mod, "register", None))
+    finally:
+        sys.modules.pop("omnimaker", None)
+        sys.modules.update(saved)
+        for k in [k for k in list(sys.modules) if k == name or k.startswith(name + ".")]:
+            del sys.modules[k]
