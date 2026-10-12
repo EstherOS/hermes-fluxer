@@ -9,7 +9,7 @@
 - **Chat** — replies in guild channels and DMs. In guilds the bot answers when it's @mentioned (or when a message starts with `/`); a channel can be set to free-response, where it answers everything.
 - **Commands** — see [Slash commands](#slash-commands).
 - **Attachments** — receives images, files, and voice notes; sends files back.
-- **Voice & video** — joins Fluxer voice channels and talks out of the box on Hermes' own voice pipeline: your configured speech-to-text hears the room, the agent answers, and your text-to-speech speaks the reply back into the channel. Plug in `omnimaker` when you want more — streaming, local model backends, custom graphs, a video lane. Text and attachments work everywhere.
+- **Voice & video** — joins Fluxer voice channels and talks out of the box on Hermes' own voice pipeline: your configured speech-to-text hears the room, the agent answers, and your text-to-speech speaks the reply back into the channel — and speaking over the bot cuts its reply short (barge-in). Plug in `omnimaker` when you want more — streaming, local model backends, custom graphs, a video lane. Text and attachments work everywhere.
 
 ## Setup
 

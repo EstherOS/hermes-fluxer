@@ -10,8 +10,10 @@ session); otherwise transcripts go through the plugin's own message pipeline
 and the adapter's voice-bound send hook.  Hermes' transcription path is the
 default STT (``stt.engine: hermes``); whisper.cpp and a warm Qwen3-ASR server
 are available as local alternatives.  One utterance at a time: while one is
-processing, a new one is queued (``queue_utterance``) or dropped — barge-in
-belongs to the engine path (``OmniVoiceBridge`` + ``@fluxer.speech``).
+processing, a new one is queued (``queue_utterance``) or dropped.  When an
+authorized speaker starts talking (VAD onset, ``barge_in`` default on), the
+bot's in-flight speech is cut so it never talks over the user; the engine
+path's ``OmniVoiceBridge`` routes the same signal through ``@fluxer.speech``.
 
 The cascade owns no LiveKit connection; it consumes tracks the controller
 subscribed.
@@ -74,6 +76,7 @@ class VoiceCascade:
             "frames": 0, "bytes": 0, "utterances": 0, "dropped_busy": 0,
             "queued_busy": 0, "stt_calls": 0, "stt_failures": 0, "stt_fallback_calls": 0,
             "dispatched": 0, "short_dropped": 0, "dropped_unauthorized": 0,
+            "barges": 0,
         }
         self.last_transcript: Optional[str] = None
         self.dispatched_via: Optional[str] = None
@@ -130,7 +133,9 @@ class VoiceCascade:
                 self.stats["frames"] += 1
                 self.stats["bytes"] += len(data)
                 self.stats["short_dropped"] = self.segmenter.dropped_short
-                for utterance in self.segmenter.feed(data):
+                utterances = self.segmenter.feed(data)
+                self._consume_barge_onset(participant)
+                for utterance in utterances:
                     await self._handle_utterance(utterance, participant)
         except asyncio.CancelledError:
             raise
@@ -150,8 +155,33 @@ class VoiceCascade:
         """Test/dry-run seam: feed raw 48k mono int16 bytes as a received frame."""
         self.stats["frames"] += 1
         self.stats["bytes"] += len(data)
-        for utterance in self.segmenter.feed(data):
+        utterances = self.segmenter.feed(data)
+        self._consume_barge_onset(participant)
+        for utterance in utterances:
             await self._handle_utterance(utterance, participant)
+
+    def _consume_barge_onset(self, participant) -> None:
+        """Cut in-flight speech when an authorized speaker starts talking.
+
+        The VAD onset edge fires after ``onset_ms`` of sustained voice — well
+        before the utterance completes — so the bot stops mid-sentence instead
+        of talking over the user (``barge_in``, default on).  Unauthorized
+        speakers never reach the playback path.
+        """
+        if not self.config.barge_in or not self.segmenter.take_onset():
+            return
+        speaker_id, _ = speaker_from_identity(getattr(participant, "identity", ""))
+        if not self._speaker_authorized(speaker_id):
+            return
+        stop = getattr(getattr(self.adapter, "_voice", None), "stop_playback", None)
+        if not callable(stop):
+            return
+        self.stats["barges"] += 1
+        log.info("Fluxer voice: speech onset from %s — cutting in-flight speech", speaker_id)
+        try:
+            stop(self.session)
+        except Exception:
+            log.debug("Fluxer voice: barge-in stop_playback failed", exc_info=True)
 
     # ── utterance → transcript → dispatch ────────────────────────────────
 
