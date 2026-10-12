@@ -1717,11 +1717,12 @@ def register(ctx):
         pii_safe=False,
         allow_update_command=True,
         platform_hint=(
-            "You are chatting via Fluxer (fluxer.app), a Discord-style messaging "
-            "platform. Standard markdown and fenced code blocks render; messages are "
-            "capped at 4000 characters (long replies are split automatically). In "
-            "guild channels you are addressed by @mention (or a leading '/' command); "
-            "in free-response channels every message reaches you. Keep replies "
-            "concise and conversational."
+            "You are chatting via Fluxer (fluxer.app). Markdown renders — headings, "
+            "lists, blockquotes, tables, and fenced code blocks all work. Messages "
+            "are capped at 4000 characters (long replies are split automatically). "
+            "You can attach files with MEDIA:/absolute/path/to/file. In guild "
+            "channels you are addressed by @mention (or a leading '/' command); in "
+            "free-response channels every message reaches you. Keep replies concise "
+            "and conversational."
         ),
     )
