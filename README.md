@@ -2,14 +2,14 @@
 
 [Hermes Agent](https://hermes-agent.nousresearch.com/docs) is a personal AI agent that lives in your chats. This repo connects it to **[Fluxer](https://fluxer.app)** — a chat platform for communities, friend groups, and DMs — so your agent can live in your Fluxer guilds: answering messages, running commands, sharing files, and joining voice channels to talk.
 
-> **This is a monorepo.** Using Fluxer with Hermes needs only the plugin in `plugins/hermes-fluxer/`. The two `packages/` directories hold an optional realtime engine that powers the voice & video features — if they gain traction, they may be split into their own repositories.
+> **This is a monorepo.** Using Fluxer with Hermes needs only the plugin in `plugins/hermes-fluxer/`. The two `packages/` directories hold an optional realtime engine for advanced voice & video pipelines — if they gain traction, they may be split into their own repositories.
 
 ## What it does
 
 - **Chat** — replies in guild channels and DMs. In guilds the bot answers when it's @mentioned (or when a message starts with `/`); a channel can be set to free-response, where it answers everything.
 - **Commands** — see [Slash commands](#slash-commands).
 - **Attachments** — receives images, files, and voice notes; sends files back.
-- **Voice & video (optional)** — joins Fluxer voice channels over LiveKit, with the pipeline supplied by `omnimaker`: speech-to-text in, the agent in the middle, speech out — plus a video lane (frames in for captioning, rendered frames out). Backends are mix-and-match; stitch them together however you like. Text and attachments work without any of it.
+- **Voice & video** — joins Fluxer voice channels and talks out of the box on Hermes' own voice pipeline: your configured speech-to-text hears the room, the agent answers, and your text-to-speech speaks the reply back into the channel. Plug in `omnimaker` when you want more — streaming, local model backends, custom graphs, a video lane. Text and attachments work everywhere.
 
 ## Setup
 
@@ -34,7 +34,7 @@ You'll need a running Hermes Agent (see the [docs](https://hermes-agent.nousrese
 
 3. **Restart the gateway** — `hermes gateway restart` — then DM the bot or @mention it in a guild.
 
-Voice & video are optional: they need LiveKit and the `omnimaker` packages. Voice keys live under `gateway.platforms.fluxer.extra.voice`; engine profiles under the top-level `omni:` section (template in `docs/ACTIVATION.md`).
+Voice needs LiveKit and a Hermes STT/TTS provider — listening and speaking ride Hermes' own voice pipeline. `omnimaker` is optional (streaming, local models, custom graphs, video). Voice keys live under `gateway.platforms.fluxer.extra.voice`; engine profiles under the top-level `omni:` section (template in `docs/ACTIVATION.md`).
 
 ## Slash commands
 
@@ -49,7 +49,7 @@ Voice & video are optional: they need LiveKit and the `omnimaker` packages. Voic
 
 ## Omnimaker — the realtime engine
 
-`packages/omnimaker` is a small streaming engine that wires "senses" into a graph: nodes with roles — ears (speech → text), mouth (text → speech), thinker (the agent), eyes (images) — connected by routes. The Fluxer plugin uses it for the voice and video lanes; it contains no platform code, so any platform can drive it.
+`packages/omnimaker` is a small streaming engine that wires "senses" into a graph: nodes with roles — ears (speech → text), mouth (text → speech), thinker (the agent), eyes (images) — connected by routes. The Fluxer plugin uses it when you configure an engine profile — streaming pipelines, local model backends, and the video lane. It contains no platform code, so any platform can drive it.
 
 Docs: [`packages/omnimaker/docs`](packages/omnimaker/docs/README.md)
 
