@@ -1,6 +1,6 @@
 # Small multimodal model tiers (≤4B) — recommendations from Owner
 
-Source: owner, Discord DM, 2026-09-11 (originally a deepseek.com chat output).
+Source: owner, 2026-09-11 (a deepseek.com chat output).
 Status: candidate list for the **omni engine duplex slot** — use whichever works;
 validate before trusting. Follow-up: `docs/omni-models-feasibility.md` (feasibility scout).
 

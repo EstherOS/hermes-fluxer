@@ -9,7 +9,7 @@
 
 This document defines the **realtime/omni engine** — a Hermes-compatible plugin that provides role-tagged multimodal backends (ears, mouth, eyes, talker, thinker, realtime, omni), a profile system for composing them, and a streaming duplex architecture for voice/video.
 
-It is **separate from the fluxer chat platform plugin** (`docs/spec-fluxer-plugin.md`). The realtime engine has no dependency on fluxer — any Hermes platform plugin (discord, telegram, fluxer) can use it. fluxer can optionally bridge to it for voice; that bridge is documented in §7 of fluxer's spec.
+It is **separate from the fluxer chat platform plugin** (`docs/spec-fluxer-plugin.md`). The realtime engine has no dependency on fluxer — any Hermes platform plugin can use it. fluxer can optionally bridge to it for voice; that bridge is documented in §7 of fluxer's spec.
 
 ### What this engine IS
 - A backend registry with typed role interfaces and a profile grammar
@@ -20,7 +20,7 @@ It is **separate from the fluxer chat platform plugin** (`docs/spec-fluxer-plugi
 
 ### What this engine IS NOT
 - **Not a model manager.** Local model installation, GGUF fetching, and binary configuration are user behavior — documented in the feasibility guide (`docs/omni-models-feasibility.md`) and user-facing deployment docs, not in the plugin code. The engine defines interface contracts; the user provides implementations.
-- **Not a chat platform adapter.** Text messaging, channels, guilds, and attachments belong to platform plugins (fluxer, discord, etc.). The engine handles senses — text is just another sense.
+- **Not a chat platform adapter.** Text messaging, channels, guilds, and attachments belong to platform plugins (fluxer, telegram, etc.). The engine handles senses — text is just another sense.
 
 ---
 
@@ -258,7 +258,7 @@ The engine validates at session start: backend type recognized? Binary exists? S
 
 ## 8. Features toggle for platform plugins
 
-Any Hermes platform plugin (fluxer, discord, telegram) can activate the realtime engine by toggling a config feature flag:
+Any Hermes platform plugin (fluxer, telegram, etc.) can activate the realtime engine by toggling a config feature flag:
 
 ```yaml
 # In the platform's config section (e.g. fluxer config)

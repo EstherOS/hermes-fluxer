@@ -362,7 +362,7 @@ enforced; moving to another channel moves the connection via `connection_id`.
 
 - Send budgets: **600 client payloads per rolling 60 s per connection**, 600 per
   fixed 60 s per **session**, 6 000 per 60 s per source IP → exceed = close
-  `4008 Rate limited`. (Not Discord's 120/60 — Fluxer is 600/60.)
+  `4008 Rate limited`.
 - 256 concurrent sockets per IP; Identify budget 300 per 60 s per IP (excess
   silently discarded, no reply).
 - Presence Update: 5 per rolling 20 s per socket; Voice State Update: 2/s
@@ -508,8 +508,7 @@ All event payloads on docs.fluxer.app/gateway/events. Bot-relevant:
 - `MESSAGE_CREATE` overrides both the passive filter and `ignored_events` when
   the message *directly mentions* the bot user, `@everyone`, or `@here`.
 - A suppressed event consumes no sequence number (no gaps).
-- Removing the old Discord-style intent concern: **message content is always
-  present**; there is no MESSAGE_CONTENT privilege. `(docs, live)`
+- **Message content is always present**; there is no MESSAGE_CONTENT privilege. `(docs, live)`
 
 ## 10. Capture inventory (`docs/captures/`)
 

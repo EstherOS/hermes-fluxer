@@ -1,4 +1,4 @@
-# Omni Engine — Design v2
+# Omni Engine — Design
 
 ## Separation of concerns
 
@@ -18,16 +18,16 @@ A Hermes platform adapter that connects the Fluxer chat/voice API to the Hermes 
 
 The Fluxer plugin is the **outer shell**. It knows about Fluxer's API, LiveKit WebRTC, and the Hermes agent protocol. It does not know about models, profiles, ASR, TTS, or component graphs — those are the engine's job.
 
-### 2. Omni engine (hermes-omni)
+### 2. Omni engine
 
-A transport-agnostic realtime/multimodal engine. It has no platform dependencies — it works the same whether the audio comes from Fluxer, Discord, a file, or a microphone. Its responsibilities:
+A transport-agnostic realtime/multimodal engine. It has no platform dependencies — it works the same whether the audio comes from Fluxer, a file, or a microphone. Its responsibilities:
 
 - **Profile system**: Read a component graph config, validate it, resolve backends.
 - **Component graph**: Create push routes between components. Data flows automatically from source to destination — no state machine coordinates the pipeline.
 - **Backend registry**: Named model implementations that the engine can build and route data to. Backends are registered at startup by the host (the Fluxer adapter, or a CLI, or tests).
 - **Session lifecycle**: `start()` wires the graph, `stop()` tears it down. `feed_audio()` pushes PCM into the graph. `output_stream()` pulls PCM out. The session holds no state about the conversation — it's a data router.
 
-The omni engine is the **inner core**. It knows about component graphs, push routes, backends, and data types. It does not know about Fluxer, Discord, Hermes tools, or user sessions — those are the plugin's job.
+The omni engine is the **inner core**. It knows about component graphs, push routes, backends, and data types. It does not know about Fluxer, Hermes tools, or user sessions — those are the plugin's job.
 
 ### 3. Local models
 
