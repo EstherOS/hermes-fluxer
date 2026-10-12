@@ -1,6 +1,6 @@
-# Hermes-Fluxer — Fluxer voice platform for Omnimaker
+# Hermes-Fluxer — Fluxer platform bindings and backends for Omnimaker
 
-This plugin integrates Omnimaker with the Fluxer voice platform. It provides platform bindings (`@fluxer.*`) and local backends for ASR and TTS.
+This plugin connects the Fluxer platform to Omnimaker. It provides platform bindings (`@fluxer.*`) and local backends for ASR and TTS.
 
 ## Components
 
@@ -57,3 +57,12 @@ routes:
 ```
 
 Speech onset arrives as an envelope from `@fluxer.speech` (emitted by the bridge when the VAD detects sustained speech, ~300 ms). Routing it at `*.cancel` control endpoints is the entire barge-in wiring — the bridge also flushes its own playback queue and aborts the in-flight segment so the speaker goes quiet immediately.
+
+## Tests
+
+The suite imports ``gateway.*``, so run it with a Hermes checkout's venv:
+
+```bash
+cd ~/.hermes/hermes-agent
+./venv/bin/python -m pytest ~/workspace/fluxer/plugins/hermes-fluxer/src/fluxer/tests -q
+```

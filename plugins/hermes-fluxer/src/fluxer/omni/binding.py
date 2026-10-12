@@ -1,4 +1,4 @@
-"""Fluxer platform binding adapter for the hermes-omni engine."""
+"""Fluxer platform binding adapter for the omni engine."""
 
 from __future__ import annotations
 

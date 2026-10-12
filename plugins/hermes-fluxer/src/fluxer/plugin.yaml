@@ -4,9 +4,8 @@ kind: platform
 version: 1.0.0
 description: >
   Fluxer gateway adapter for Hermes Agent.
-  Connects to Fluxer (fluxer.app) and relays messages between Fluxer
-  guilds/DMs and the Hermes agent. Text first; attachments, voice and video
-  build on the same omnimodal engine seams.
+  Connects to Fluxer (fluxer.app) and relays text, attachments, and voice
+  between Fluxer guilds/DMs and the Hermes agent.
 author: NousResearch
 requires_env:
   - name: FLUXER_BOT_TOKEN

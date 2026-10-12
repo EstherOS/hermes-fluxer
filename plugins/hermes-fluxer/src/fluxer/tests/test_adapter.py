@@ -1,9 +1,4 @@
-"""Unit tests for the fluxer adapter (spec §2.4) — no network, fake clients only.
-
-Run::
-
-    cd /home/agent/.hermes/hermes-agent
-    ./venv/bin/python -m pytest /home/agent/workspace/fluxer/plugin-src/fluxer/tests/test_adapter.py -q
+"""Unit tests for the fluxer adapter — no network, fake clients only.
 
 Covers: the MESSAGE_CREATE filter chain (each gate + trigger policy), mention strip,
 outbound chunking (≤4000, newline-aware), send error mapping (retryable on 5xx /
@@ -265,7 +260,7 @@ def test_filter_source_fields_for_guild_message(fake_env):
     source = events[0].source
     assert source.chat_id == CHANNEL
     assert source.chat_name == "general"       # resolved lazily from REST
-    assert source.chat_type == "group"         # discord convention for guild text channels
+    assert source.chat_type == "group"         # guild channels report the "group" chat type
     assert source.user_id == OTHER_ID
     assert source.scope_id == GUILD
     assert source.message_id == "m42"
@@ -335,7 +330,7 @@ def test_send_chunks_on_newlines(fake_env):
     assert result.success is True
     assert len(calls) == 2
     # split at the newline, paragraph kept whole (multi-chunk indicator appended by
-    # the shared truncate_message — discord convention)
+    # the shared truncate_message)
     assert calls[0][2].startswith(p1) and calls[0][2][len(p1):].strip() == "(1/2)"
     assert calls[1][2].startswith(p2) and calls[1][2][len(p2):].strip() == "(2/2)"
     assert all(len(c[2]) <= MAX_MESSAGE_LENGTH for c in calls)

@@ -1,4 +1,4 @@
-"""Backend registry + the thin builtin backends (spec §6, wave 4).
+"""Backend registry + the thin builtin backends.
 
 The registry is the "nothing downstream cares whether one model or five serve
 the senses" seam.  A profile names a backend per slot (see
@@ -26,7 +26,7 @@ slot             backend
 ``video_out``    ``local.render`` (ffmpeg card/annotate — wraps
                  ``fluxer.video.render``)
 any              ``null`` (honest gap placeholder; raises with a clear message)
-duplex           ``null_duplex`` (no unified model fits 6 GB tonight; raises
+duplex           ``null_duplex`` (no unified model fits 6 GB; raises
                  with the config shape for the future — see
                  :data:`fluxer.omni.types.UNIFIED_CONFIG_EXAMPLE`)
 ===============  ==========================================================
@@ -544,7 +544,7 @@ class LlamaServerBackend:
         return {"Authorization": f"Bearer {self.api_key}"} if self.api_key else {}
 
     async def health(self) -> bool:
-        """True when the server answers ``/health`` with ``status: ok`` (or legacy 200)."""
+        """True when the server answers ``/health`` with ``status: ok`` (or a bare 200)."""
         try:
             payload = await asyncio.to_thread(
                 _http_json, f"{self.base_url}/health", timeout=self.timeout, headers=self._headers()
@@ -618,12 +618,12 @@ class WhisperCppBackend:
 
 
 class Qwen3ASRBackend:
-    """GPU speech→text via llama-mtmd-cli + Qwen3-ASR GGUF (verified, §3.3).
+    """GPU speech→text via llama-mtmd-cli + Qwen3-ASR GGUF (verified, feasibility doc §3.3).
 
     The other verified transport (``llama-server`` + ``input_audio`` base64,
     see ``docs/captures/omni-asr-server-evidence.md``) is implemented as the
-    ``server_url`` option; it is *not* live-tested in wave 4 and requires a
-    running server, so the CLI transport is the default.
+    ``server_url`` option; it requires a running server, so the CLI transport
+    is the default.
     """
 
     name = "local.qwen3asr"
@@ -729,7 +729,7 @@ class PiperBackend:
 
 
 class Qwen3TTSBackend:
-    """GPU text→speech via ``llama-tts`` + Qwen3-TTS GGUF, voice cloning (§3.3).
+    """GPU text→speech via ``llama-tts`` + Qwen3-TTS GGUF, voice cloning (feasibility doc §3.3).
 
     ``-c 1024`` is deliberate: the model's default context made the loader try
     a single ~917 MB Vulkan buffer and fail on the 6 GB card (doc §3.4).
@@ -966,7 +966,7 @@ class NullDuplexBackend:
     """The unified (single-god-model) slot, honestly empty.
 
     No model that serves the senses in one process fits the 6 GB GTX 1060
-    today (feasibility doc §1/§5).  This backend keeps profiles wireable: a
+    (feasibility doc §1/§5).  This backend keeps profiles wireable: a
     ``mode: unified`` profile resolves, and the failure — with the exact config
     shape a future model should be configured with — happens when a session is
     opened rather than at config-parse time.
@@ -982,7 +982,7 @@ class NullDuplexBackend:
         detail = "" if not merged else f" (configured options were ignored: {sorted(merged)})"
         raise BackendNotConfigured(
             "unified duplex session is not configured: no single-model omni that fits 6 GB is "
-            "installed (Qwen2.5-Omni-3B download is deferred — docs/omni-models-feasibility.md §5)."
+            "installed (Qwen2.5-Omni-3B is not downloaded — docs/omni-models-feasibility.md §5)."
             f"{detail} To wire a future unified model, add a profile like "
             f"{json.dumps(UNIFIED_CONFIG_EXAMPLE['omni']['profiles']['unified-future'])} "
             "and register its backend with register_backend(name, factory, kind='duplex')."

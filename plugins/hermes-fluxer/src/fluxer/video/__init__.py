@@ -1,4 +1,4 @@
-"""Fluxer video lane (spec §6 W4): duplexer + local backend + render + publish.
+"""Fluxer video lane: duplexer + local backend + render + publish.
 
 * IN — ``LocalVideoDuplexer.ingest_video`` / ``push_frame`` / ``attach_track``
   (files and live LiveKit tracks; ffmpeg + SmolVLM2, no torch);

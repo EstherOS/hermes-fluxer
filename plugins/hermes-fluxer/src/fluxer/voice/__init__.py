@@ -1,4 +1,4 @@
-"""Fluxer voice lane (spec §6-W3) — lazy exports only.
+"""Fluxer voice lane — lazy exports only.
 
 Importing this package must **never** import ``livekit`` and must never raise:
 a venv without livekit keeps the plugin text-only.  LiveKit is imported inside
@@ -41,7 +41,7 @@ _LAZY = {
 _livekit: Any = None
 _livekit_checked = False
 _livekit_missing_logged = False
-#: The one-line install hint (c4a report §6); asserted by tests.
+#: The one-line install hint; asserted by tests.
 LIVEKIT_MISSING_MESSAGE = (
     "Fluxer voice disabled: install livekit into the Hermes venv "
     "(`uv pip install livekit`) — text-only mode"

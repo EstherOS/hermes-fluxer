@@ -1,20 +1,14 @@
-"""LiveKit video publish seam (spec §6 W4).
+"""LiveKit video publish seam.
 
 ``publish_frames_livekit`` publishes a sequence of :class:`~fluxer.video.duplex.Frame`
 as a camera track on a LiveKit room: build ``rtc.VideoSource`` → ``LocalVideoTrack
 .create_video_track`` → ``publish_track`` → ``capture_frame`` per frame at ``fps``
 → collect track stats → unpublish + disconnect.
 
-The livekit import is lazy (inside the function).  This module is **not
-live-tested in wave 4** — no Fluxer voice-channel joins during the C4b run (a
-second join would kick it) — it is unit-tested against a fake ``livekit``
-module.  The wire-level publish path itself is proven by the C4a voice probe
-(``status/c4a-report.md`` §2.7-2.8: audio frames over the same API family,
-``candidate_pair: PAIR_SUCCEEDED``, packets on the wire).  The integration test
-that joins a channel and publishes real video frames is deferred to the voice
-wave.
+The livekit import is lazy (inside the function); the module is unit-tested
+against a fake ``livekit`` module.
 
-API verified against the installed ``livekit==1.1.18`` before coding:
+API surface (installed ``livekit==1.1.18``):
 ``VideoSource(width, height)`` / ``LocalVideoTrack.create_video_track(name, source)``
 / ``rtc.VideoFrame(w, h, rtc.VideoBufferType.RGB24, data)`` /
 ``source.capture_frame(frame, timestamp_us=...)`` / ``track.get_stats()``.
@@ -61,8 +55,8 @@ def _stat_field(stat: Any, name: str) -> Any:
 def summarize_track_stats(stats: Any) -> dict[str, Any]:
     """Compact, testable summary of ``track.get_stats()`` output.
 
-    Keeps a per-entry view (type + the fields the C4a probe reported as the
-    'money shot': packets/bytes counters, candidate-pair state, nominated) and
+    Keeps a per-entry view (type + the wire counters: packets/bytes,
+    candidate-pair state, nominated) and
     an ``outbound_rtp_totals`` roll-up for the RTP counters.
     """
     try:

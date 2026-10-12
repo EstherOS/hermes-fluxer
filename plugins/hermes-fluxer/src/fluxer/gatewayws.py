@@ -1,4 +1,4 @@
-"""Fluxer gateway WebSocket client (spec ``§2.2`` — frozen interface).
+"""Fluxer gateway WebSocket client.
 
 Implements the Fluxer gateway protocol against ``wss://gateway.fluxer.app``
 (URL override supported; ``?v=1&encoding=json`` appended automatically):
@@ -16,8 +16,7 @@ Implements the Fluxer gateway protocol against ``wss://gateway.fluxer.app``
   / ``("reconnect_failed", {...})`` — close code 4004 (and op9 identify
   rejection) marks the failure ``non_retryable: True``.
 
-Additive (optional keyword) knobs beyond the frozen signature — safe for the
-frozen callers, used by tests and to bound behaviour:
+Optional keyword knobs (used by tests and to bound behaviour):
 ``ack_timeout``, ``retry_backoff``, ``max_reconnect_attempts``,
 ``start_timeout``.
 """

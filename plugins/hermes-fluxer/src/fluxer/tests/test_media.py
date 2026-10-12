@@ -1,10 +1,5 @@
-"""Unit tests for wave 2 — attachments (spec §6-W2): ``fluxer.media`` + the
-adapter's inbound caching and outbound ``send_*`` media methods.
-
-Run::
-
-    cd /home/agent/.hermes/hermes-agent
-    ./venv/bin/python -m pytest /home/agent/workspace/fluxer/plugin-src/fluxer/tests -q
+"""Unit tests for attachments: ``fluxer.media`` + the adapter's inbound
+caching and outbound ``send_*`` media methods.
 
 No network: aiohttp is faked for the download helper; the REST client is a
 recording stub.  Covers: mime → MessageType mapping (voice-note flag), the

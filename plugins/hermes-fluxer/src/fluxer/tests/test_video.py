@@ -1,8 +1,7 @@
-"""Unit tests for the video duplexer lane (wave 4).
+"""Unit tests for the video duplexer lane.
 
 Subprocess work is mocked (``fluxer.video.local_backend.run_command`` /
-``fluxer.video.render.run_ffmpeg`` / ``stream_to_ffmpeg``); the live evidence
-run under ``status/c5-evidence/`` exercises the real binaries.  Async paths run
+``fluxer.video.render.run_ffmpeg`` / ``stream_to_ffmpeg``).  Async paths run
 via ``asyncio.run`` (no pytest-asyncio in this venv).
 """
 

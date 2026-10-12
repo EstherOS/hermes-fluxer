@@ -1,9 +1,4 @@
-"""Voice-lane unit tests (spec §6-W3) — fake ``livekit.rtc`` stub, no network.
-
-Run::
-
-    cd /home/agent/.hermes/hermes-agent
-    ./venv/bin/python -m pytest /home/agent/workspace/fluxer/plugin-src/fluxer/tests/test_voice.py -q
+"""Voice-lane unit tests — fake ``livekit.rtc`` stub, no network.
 
 Covers: lazy-import failure path (plugin stays text-only), config parsing incl.
 bad values, session lifecycle + all three binding modes (+ invoke fallback),
@@ -561,7 +556,7 @@ def test_rejoin_after_unexpected_room_disconnect(fake_env, fake_livekit, monkeyp
         return False
 
     assert asyncio.run(scenario()) is True
-    assert len(gw.op4_joins()) == 2               # re-op4 the same channel (c4a §5.1)
+    assert len(gw.op4_joins()) == 2               # re-op4 the same channel
     assert ctl.stats["rejoins_ok"] == 1
     asyncio.run(ctl.leave(GUILD))
 

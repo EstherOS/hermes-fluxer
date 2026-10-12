@@ -16,7 +16,7 @@ A profile is a **graph of components**. Each component is a model or service wit
 
 ### Data flow
 
-Data enters the graph from `user` (mic audio, text channel, camera, screenshare) and flows through components via push routes. Each component processes incoming data and pushes results downstream. The graph replaces the FSM — no state machine coordinates the pipeline.
+Data enters the graph from `user` (mic audio, text channel, camera, screenshare) and flows through components via push routes. Each component processes incoming data and pushes results downstream. The graph carries the pipeline — no state machine coordinates it.
 
 ```
 user → ears (audio → text) → talker (processes, may route to thinker)
@@ -82,7 +82,7 @@ The engine builds the component graph from the config. For each component:
 
 4. **Wires tools**: The component with `harness: core` is given full Hermes agent access. Other components get only their declared tools. Tool invocations are routed to the target component.
 
-5. **No FSM**: The graph replaces the session state machine. Data flows through push routes. Components process independently. The only state is per-component (busy/idle) for interrupt gating.
+5. **No FSM**: there is no session state machine — data flows through push routes. Components process independently. The only state is per-component (busy/idle) for interrupt gating.
 
 ## Example Profiles
 

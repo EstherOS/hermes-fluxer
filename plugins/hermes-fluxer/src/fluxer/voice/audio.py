@@ -1,4 +1,4 @@
-"""Audio helpers for the Fluxer voice lane (spec §6-W3).
+"""Audio helpers for the Fluxer voice lane.
 
 Stdlib only (``audioop`` on 3.11 for C-speed resample/RMS; numpy is *not*
 required).  No livekit import here — everything operates on plain int16

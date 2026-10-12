@@ -1,4 +1,4 @@
-"""Fluxer REST client (spec ``§2.1`` — frozen interface).
+"""Fluxer REST client.
 
 Async :mod:`aiohttp` client for ``https://api.fluxer.app/v1``:
 
@@ -13,9 +13,8 @@ Async :mod:`aiohttp` client for ``https://api.fluxer.app/v1``:
   header; the query string is the credential) → ``/attachments/complete`` for
   multipart.
 
-Layout details that are not frozen by the spec (constants, helper names) are
-implementation details; the public surface is ``FluxerAPIError`` and
-``FluxerREST``.
+Constants and helper names are implementation details; the public surface
+is ``FluxerAPIError`` and ``FluxerREST``.
 """
 
 from __future__ import annotations

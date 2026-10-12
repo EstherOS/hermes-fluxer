@@ -331,7 +331,7 @@ Designed for:
 
 Interruption is **externally managed**. The profile itself has no internal
 interruption mechanism: the FSM will not cancel a running backend mid-turn.
-Instead, the platform adapter (fluxer, discord, telegram) decides when to
+Instead, the platform adapter (fluxer, telegram, etc.) decides when to
 abort a turn:
 
 - A new user message arrives → the adapter drops the current session and
