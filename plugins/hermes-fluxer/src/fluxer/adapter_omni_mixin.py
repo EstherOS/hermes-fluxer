@@ -1,4 +1,4 @@
-"""OmniAdapterMixin — hermes-omni integration for FluxerAdapter.
+"""OmniAdapterMixin — omni engine integration for FluxerAdapter.
 
 Loads a profile from the ``omni:`` config section, creates a session,
 and registers backends. The bridge owns all audio I/O — the mixin is
@@ -16,7 +16,7 @@ logger = logging.getLogger(__name__)
 
 
 class OmniAdapterMixin:
-    """Mixin adding hermes-omni backend registration + session creation.
+    """Mixin adding omni engine backend registration + session creation.
 
     Expected instance attributes:
         _omni_cfg: dict | None

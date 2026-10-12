@@ -1,12 +1,11 @@
-"""Inbound attachment download + caching for the fluxer adapter (spec §6 W2).
+"""Inbound attachment download + caching for the fluxer adapter.
 
 Fluxer attachment mechanics (``docs/fluxer-api-notes.md`` §3): message
 ``attachments[]`` carry an absolute ``url`` (and ``proxy_url``) on the media
 host — public reads, **no auth header** (the path is the authorization), exact
 bytes, lifespan tracks the message.  The adapter downloads the bytes itself and
 hands the core **local file paths**: ``MessageEvent.media_urls`` (paths) +
-``media_types`` (MIME strings) with a ``message_type`` picking the class
-(integration guide §6.1).
+``media_types`` (MIME strings) with a ``message_type`` picking the class.
 
 Public surface:
 
@@ -19,8 +18,8 @@ Public surface:
   ``(media_urls, media_types, message_type | None)``.
 
 Voice notes: a message (or attachment) flagged with ``VOICE_MESSAGE`` (8192,
-api notes §2) maps ``audio/*`` to :data:`MessageType.VOICE` (auto-STT per
-integration §6.1) instead of :data:`MessageType.AUDIO`.
+api notes §2) maps ``audio/*`` to :data:`MessageType.VOICE` (auto-STT)
+instead of :data:`MessageType.AUDIO`.
 """
 
 from __future__ import annotations

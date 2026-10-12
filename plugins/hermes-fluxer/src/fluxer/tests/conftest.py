@@ -1,8 +1,8 @@
 """Shared setup for the fluxer adapter unit tests.
 
-Puts ``plugin-src`` on ``sys.path`` so the plugin package imports as ``fluxer``, and
+Puts the plugin's ``src`` on ``sys.path`` so the plugin package imports as ``fluxer``, and
 registers the dynamic ``Platform("fluxer")`` enum member the same way the gateway's
-platform registry does at plugin registration time (spec §2.4 / integration §1.3).
+platform registry does at plugin registration time.
 """
 
 import sys

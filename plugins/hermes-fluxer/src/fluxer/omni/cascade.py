@@ -1,4 +1,4 @@
-"""The cascade facade: stitched profiles behind a duplex-like seam (spec §6).
+"""The cascade facade: stitched profiles behind a duplex-like seam.
 
 :class:`Cascade` runs a half-duplex *turn* over a stitched profile:
 
@@ -205,7 +205,7 @@ class CascadeSession:
     ``send()`` runs a full turn and buffers its outputs; ``receive()`` drains
     them as an async iterator which ends when :meth:`close` is called.  Turns
     are serialized (half-duplex), which is the honest behavior of the stitched
-    cascade on 6 GB (doc §2 "What duplex means here tonight").
+    cascade on 6 GB.
     """
 
     def __init__(self, cascade: Cascade, *, queue_size: int = 0) -> None:

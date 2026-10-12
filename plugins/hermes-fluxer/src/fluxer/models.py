@@ -1,4 +1,4 @@
-"""Thin normalization helpers for Fluxer objects (spec ``§2.3``).
+"""Thin normalization helpers for Fluxer objects.
 
 Pure functions only — no I/O, no third-party imports.  The protocol clients
 (``rest.py`` / ``gatewayws.py``) and the adapter share these so that key
@@ -26,8 +26,8 @@ __all__ = [
     "mentioned_user_ids",
 ]
 
-#: ``<@id>`` and ``<@!id>`` mention syntax (the legacy ``!`` nickname form
-#: included).  ``findall`` yields the raw user ids as strings.
+#: ``<@id>`` and ``<@!id>`` mention syntax.  ``findall`` yields the raw user
+#: ids as strings.
 AT_MENTION_RE = re.compile(r"<@!?(\d+)>")
 
 

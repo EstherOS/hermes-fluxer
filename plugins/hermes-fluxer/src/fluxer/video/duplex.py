@@ -1,4 +1,4 @@
-"""Video duplexer seam: frames in, events out (spec §6 W4).
+"""Video duplexer seam: frames in, events out.
 
 The point of this module is a **clear in/out seam** that does not care whether
 the frames come from a decoded file (ffmpeg) or a LiveKit track, and does not

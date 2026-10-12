@@ -1,4 +1,4 @@
-"""Sense/part vocabulary for the fluxer omni engine (spec §6, wave 4).
+"""Sense/part vocabulary for the fluxer omni engine.
 
 The engine is built around one idea: **nothing downstream cares whether one
 model or five serve the senses**.  Everything that is not the engine itself

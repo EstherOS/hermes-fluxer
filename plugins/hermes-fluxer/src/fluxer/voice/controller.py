@@ -1,16 +1,15 @@
-"""Voice session controller for the Fluxer plugin (spec §6-W3).
+"""Voice session controller for the Fluxer plugin.
 
 Owns the join/leave lifecycle (gateway op 4 → ``VOICE_SERVER_UPDATE`` → LiveKit
 ``Room.connect``), session binding, speech publishing (piper → 48 kHz PCM →
 ``AudioSource``), bounded re-op4 rejoin after room/token death
-(c4a report §5.1 "re-op4 same channel" strategy), ``token_refreshed`` adoption
+(re-op4 the same channel), ``token_refreshed`` adoption
 and optional auto-leave when the channel stays empty.
 
 **LiveKit is imported lazily inside functions** — on ``ImportError`` the
 controller stays inert, logs once ("voice disabled: install livekit …") and the
 plugin keeps working text-only (hard requirement; fresh venvs must not break
-plugin load).  Tokens are never logged; only ``len`` — reuse the c4a redaction
-rule.
+plugin load).  Tokens are never logged; only ``len``.
 """
 
 from __future__ import annotations
@@ -604,7 +603,7 @@ class VoiceController:
             if user_id:
                 session.speaking_users[user_id] = now
 
-    # ── rejoin (c4a §5.1 strategy: re-op4 the same channel) ─────────────
+    # ── rejoin (re-op4 the same channel) ────────────────────────────────
 
     def _schedule_rejoin(self, session: VoiceSession, reason: str) -> None:
         if session.rejoin_active or session.leaving or self._closing:
@@ -1016,7 +1015,7 @@ class VoiceController:
 
 
 def _enum_str(rtc, enum_name: str, value: Any) -> str:
-    """Readable enum name across proto/python enum shapes (c4a probe helper)."""
+    """Readable enum name across proto/python enum shapes."""
     if value is None:
         return "?"
     enum_cls = getattr(rtc, enum_name, None)

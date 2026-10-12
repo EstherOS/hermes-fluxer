@@ -1,4 +1,4 @@
-"""Local ffmpeg renderers — the video OUT path (spec §6 W4), no new deps.
+"""Local ffmpeg renderers — the video OUT path, no new deps.
 
 Three renderers, all driven by the system ffmpeg (~7.1.5 here):
 

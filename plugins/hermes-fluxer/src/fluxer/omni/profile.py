@@ -1,4 +1,4 @@
-"""Profile parsing for the fluxer omni engine (spec §6, wave 4).
+"""Profile parsing for the fluxer omni engine.
 
 A profile is the config-level statement of "which backend serves which
 sense".  Two modes:
@@ -6,7 +6,7 @@ sense".  Two modes:
 ``stitched``
     One binding per slot, e.g. ``audio_in: local.whispercpp`` +
     ``audio_out: local.piper`` — the verified cascade on this box
-    (``docs/omni-models-feasibility.md`` §2/§5 phase 0).
+    (``docs/omni-models-feasibility.md`` §2/§5).
 
 ``unified``
     One backend (a single god model) + the senses it serves, e.g.
@@ -65,7 +65,7 @@ __all__ = [
 #: Name of the builtin fallback profile used when no ``omni`` config exists.
 DEFAULT_PROFILE_NAME = "local-stitched"
 
-#: The builtin fallback: exactly the backends verified on this box (doc §2).
+#: The builtin fallback: the backends verified on this box (feasibility doc §2).
 DEFAULT_PROFILE_SPEC: dict[str, Any] = {
     "mode": "stitched",
     "bindings": {

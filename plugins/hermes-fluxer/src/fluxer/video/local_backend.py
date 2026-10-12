@@ -1,4 +1,4 @@
-"""Local (all-GGUF, no torch) video duplexer (spec §6 W4).
+"""Local (all-GGUF, no torch) video duplexer.
 
 IN
     * ``ingest_video(path, fps=2)`` — files: either the **native** llama.cpp
@@ -16,9 +16,8 @@ OUT
 
 The captions come from the installed SmolVLM2 GGUF via the omni registry
 backend ``local.smolvlm``; ``caption_fn`` can be injected for tests or for a
-future unified model.  The LiveKit track path is implemented but intentionally
-**not live-tested tonight** (no voice-channel joins during the C4b run) — it
-is unit-tested against a fake livekit module.
+future unified model.  The LiveKit track path is unit-tested against a fake
+livekit module.
 """
 
 from __future__ import annotations
@@ -433,9 +432,7 @@ class LocalVideoDuplexer:
         are sub-sampled to ``fps`` and pushed via :meth:`push_frame` (bounded
         ring buffer + periodic caption batches downstream).
 
-        NOT live-tested in wave 4 (no voice-channel joins during the C4b run);
-        unit-tested against a fake ``livekit`` module.  Integration test is
-        deferred to the voice wave (join → attach → captions in the transcript).
+        Unit-tested against a fake ``livekit`` module.
         """
         rtc = _rtc()
         target_fps = float(fps if fps is not None else self.fps)

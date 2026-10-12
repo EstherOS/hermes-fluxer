@@ -1,4 +1,4 @@
-"""Voice-lane configuration for the Fluxer plugin (spec §6-W3, ``extra.voice.*``).
+"""Voice-lane configuration for the Fluxer plugin (``extra.voice.*``).
 
 All knobs are optional; parsing is total (never raises) so a typo in the gateway
 config cannot break plugin load.  Bad values fall back to defaults with a
@@ -20,7 +20,7 @@ TRANSCRIPT_MODES = ("off", "channel")
 STT_ENGINES = ("hermes", "whispercpp", "qwen3asr_server")
 TTS_ENGINES = ("piper",)
 
-# Repo-relative defaults (dev checkout: ``<repo>/plugin-src/fluxer/voice/config.py``).
+# Repo-relative defaults.
 _REPO_ROOT = Path(__file__).resolve().parents[3]
 DEFAULT_PIPER_BINARY = str(_REPO_ROOT / "gpu" / "tools" / "piper" / "piper")
 DEFAULT_PIPER_MODEL = str(_REPO_ROOT / "models" / "en_US-lessac-medium.onnx")
@@ -209,7 +209,7 @@ def parse_voice_config(raw: Any, *, fallback_guild: Optional[str] = None) -> Voi
     cfg.session_binding = binding
 
     transcripts = str(raw.get("transcripts") or "off").strip().lower()
-    if transcripts in ("on", "true", "1", "yes"):  # tolerate the spec §6 shorthand
+    if transcripts in ("on", "true", "1", "yes"):  # tolerate truthy synonyms
         transcripts = "channel"
     if transcripts not in TRANSCRIPT_MODES:
         log.warning("Fluxer voice: unknown transcripts mode %r (expected off|channel) — using 'off'",
