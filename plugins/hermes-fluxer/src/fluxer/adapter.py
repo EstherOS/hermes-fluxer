@@ -1,17 +1,11 @@
-"""Fluxer platform adapter for Hermes Agent — wave 1 (text) + wave 2 (attachments) + wave 3 (voice).
+"""Fluxer platform adapter for Hermes Agent.
 
-Contract: ``docs/spec-fluxer-plugin.md`` §2.4/§6-W2/§6-W3 (repo ``/home/agent/workspace/fluxer``).
-Protocol: ``docs/fluxer-api-notes.md``. Conventions (``chat_type`` strings, two-gate
-message filtering, chunking via ``truncate_message``) follow
-``plugins/platforms/discord/adapter.py``; structure (``register()``, interactive setup,
-standalone sender, env enablement) follows ``plugins/platforms/irc/adapter.py``;
-media conventions (local paths in ``media_urls``, ``send_*`` overrides, a failed
-upload never becomes a success) follow ``plugins/platforms/discord/adapter_media.py``
-and the integration guide §6.
+Connects to Fluxer (fluxer.app) over its REST API and gateway WebSocket:
+guild channels, group chats, and DMs; text, attachments, and voice.
 
-The client modules (``.rest``, ``.gatewayws``, ``.models``) are C1's frozen interfaces
-(spec §2.1–2.3): ``FluxerREST`` / ``FluxerAPIError`` and ``FluxerGatewayClient``.
-``.media`` (wave 2, this file's sibling) owns inbound attachment download/caching.
+The client modules (``.rest``, ``.gatewayws``, ``.models``) speak the Fluxer
+API; ``.media`` downloads and caches inbound attachments; the ``voice`` /
+``omni`` / ``video`` packages implement the optional realtime lanes.
 """
 
 from __future__ import annotations
@@ -156,7 +150,7 @@ class FluxerAdapter(BasePlatformAdapter, OmniAdapterMixin):
     splits_long_messages = (
         True  # send() chunks via truncate_message(MAX_MESSAGE_LENGTH)
     )
-    supports_code_blocks = True  # Fluxer renders Discord-style fenced code blocks
+    supports_code_blocks = True  # Fluxer renders fenced code blocks
 
     def __init__(self, config, **kwargs):
         super().__init__(config=config, platform=Platform("fluxer"))
@@ -202,8 +196,8 @@ class FluxerAdapter(BasePlatformAdapter, OmniAdapterMixin):
         )
         self._voice: Optional[VoiceController] = None
         self._voice_start_task: Optional["asyncio.Task"] = None
-        # Core /voice integration state — names/signatures mirror the discord adapter
-        # so gateway.run_voice's hasattr-probes find them (see slash_commands.py:617+).
+        # Core /voice integration state — attribute names read by the gateway
+        # voice surface (gateway/run_voice.py, gateway/run_turn.py).
         self._voice_text_channels: Dict[int, str] = {}
         self._voice_sources: Dict[int, dict] = {}
         self._voice_input_callback = None
@@ -577,7 +571,7 @@ class FluxerAdapter(BasePlatformAdapter, OmniAdapterMixin):
         chat_name = await self._chat_name(chat_id)
         chat_type = (
             "dm" if is_dm else "group"
-        )  # discord convention for guild text channels
+        )  # guild channels report the "group" chat type
         message_id = str(msg.get("id") or "") or None
         source = self.build_source(
             chat_id=chat_id,
@@ -925,12 +919,12 @@ class FluxerAdapter(BasePlatformAdapter, OmniAdapterMixin):
         The first caption chunk rides the media message; remaining chunks follow
         as plain ``send()`` calls (never truncated silently).  ``flags`` (e.g.
         ``VOICE_MESSAGE`` 8192) is attempted once — a 400 from create-message
-        drops the flag and retries without it (live-verified: Fluxer rejects the
-        flag with ``VOICE_MESSAGES_CANNOT_HAVE_CONTENT`` when a caption rides
-        along, and ``VOICE_MESSAGES_ATTACHMENT_WAVEFORM_REQUIRED`` when the claim
-        lacks ``waveform`` data).  Any failure is
+        drops the flag and retries without it (Fluxer rejects the flag with
+        ``VOICE_MESSAGES_CANNOT_HAVE_CONTENT`` when a caption rides along, and
+        ``VOICE_MESSAGES_ATTACHMENT_WAVEFORM_REQUIRED`` when the claim lacks
+        ``waveform`` data).  Any failure is
         ``SendResult(success=False, …)``: a failed upload never degrades into a
-        text-only "success" (integration §6.2, Discord #66797).
+        text-only "success".
         """
         rest = self._rest
         if rest is None:
@@ -1273,10 +1267,10 @@ class FluxerAdapter(BasePlatformAdapter, OmniAdapterMixin):
         except Exception as e:
             logger.debug("Fluxer: typing indicator failed for %s: %s", chat_id, e)
 
-    # ── voice channel integration (wave 3, spec §6-W3) ───────────────────
-    # Method names/signatures mirror the discord adapter so the core probes in
-    # gateway/slash_commands.py (`/voice join|leave|status`) and gateway/run_voice.py
-    # find them via hasattr on ANY platform adapter.
+    # ── voice channel integration ─────────────────────────────────────────
+    # The core voice surface reaches these methods on any platform adapter
+    # via hasattr: the /voice command handlers (gateway/slash_commands.py)
+    # and the voice runner (gateway/run_voice.py).
 
     async def play_tts(
         self,
@@ -1311,7 +1305,7 @@ class FluxerAdapter(BasePlatformAdapter, OmniAdapterMixin):
         """Join a voice channel (core ``/voice join`` path + programmatic joins).
 
         ``channel`` is a :class:`~.voice.controller.VoiceChannelRef` (or any object
-        with ``id``/``guild_id``, e.g. the discord-shaped result of
+        with ``id``/``guild_id``, e.g. the result of
         :meth:`get_user_voice_channel`).  ``source`` (a SessionSource/dict) binds
         ``session_binding: invoke`` to the invoking chat; without one the controller
         falls back to channel binding with a log line.
