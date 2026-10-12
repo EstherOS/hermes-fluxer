@@ -11,9 +11,10 @@ stack are both just config.
   agent conversation as an engine node (system prompt, tools, memory).
 - `plugins/hermes-fluxer/` — the Fluxer platform plugin: REST + gateway
   clients, adapter, media, and the LiveKit voice lane (`voice/`) with the
-  omni/video lanes (`omni/`, `video/`). Loads inside the gateway process;
-  degrades gracefully — text-only without the omni engine, voice disabled
-  without LiveKit.
+  omni/video lanes (`omni/`, `video/`). Loads inside the gateway process.
+  Voice rides Hermes' own pipeline out of the box (VAD → Hermes STT → the
+  core voice-input callback → spoken reply); the optional omni engine adds
+  streaming graphs, local backends, and a video lane.
 
 ## Engine seams
 Senses, two directions each: text, image, audio, video (in/out).

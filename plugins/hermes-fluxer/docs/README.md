@@ -1,5 +1,7 @@
 # Hermes-Fluxer — Fluxer platform bindings and backends for Omnimaker
 
+Voice runs on Hermes' own pipeline by default; the bindings and backends documented here power the optional omnimaker engine.
+
 This plugin connects the Fluxer platform to Omnimaker. It provides platform bindings (`@fluxer.*`) and local backends for ASR and TTS.
 
 ## Components

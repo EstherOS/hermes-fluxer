@@ -118,6 +118,8 @@ class VoiceConfig:
     #: Single-slot queueing: a follow-up utterance/speech arriving while the previous one is
     #: still processing/playing is queued (latest wins for utterances) instead of dropped.
     queue_utterance: bool = True
+    #: Speech onset (VAD) from an authorized user cuts in-flight playback.
+    barge_in: bool = True
     tts_engine: str = "piper"
     piper_binary: str = DEFAULT_PIPER_BINARY
     piper_model: str = DEFAULT_PIPER_MODEL
@@ -258,6 +260,7 @@ def parse_voice_config(raw: Any, *, fallback_guild: Optional[str] = None) -> Voi
         log.warning("Fluxer voice: input_prompt must be a string, got %s — default used",
                     type(prompt).__name__)
     cfg.queue_utterance = _as_bool(raw.get("queue_utterance"), default=True)
+    cfg.barge_in = _as_bool(raw.get("barge_in"), default=True)
 
     tts = raw.get("tts")
     if isinstance(tts, dict):

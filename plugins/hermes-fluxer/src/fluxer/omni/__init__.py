@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from omnimaker.adapters.registry import registry
 from omnimaker.compiler import compile_profile
 from omnimaker.runtime import Session
 

@@ -638,6 +638,83 @@ def test_cascade_utterance_to_handle_message_then_reply_publish(fake_env, fake_l
     asyncio.run(ctl.leave(GUILD))
 
 
+def test_speech_onset_cuts_inflight_speech(fake_env, fake_livekit):
+    """Barge-in: an authorized speaker's onset stops playback (voice.barge_in default on)."""
+    adapter = make_adapter()
+    ctl = make_voice_controller(adapter)
+    stopped: list = []
+    ctl.stop_playback = lambda session: stopped.append(session)
+    gw, ok = asyncio.run(join_session(adapter, ctl))
+    assert ok is True
+    session = ctl.session_for_channel(VOICE_CHANNEL)
+    burst = tone(0.4)
+
+    async def scenario():
+        # 0.4 s of voice — the VAD onset edge fires mid-burst, before the utterance completes
+        for i in range(0, len(burst), audio_lib.FRAME_SAMPLES):
+            await session.cascade.process_frame_bytes(
+                burst[i:i + audio_lib.FRAME_SAMPLES].tobytes(),
+                participant=SimpleNamespace(identity=f"user_{USER_ID}_conn-2"),
+            )
+
+    asyncio.run(scenario())
+    assert stopped == [session]
+    assert session.cascade.stats["barges"] == 1
+    asyncio.run(ctl.leave(GUILD))
+
+
+def test_barge_in_disabled_keeps_speech(fake_env, fake_livekit):
+    """voice.barge_in: false — onset never cuts playback."""
+    adapter = make_adapter()
+    cfg = parse_voice_config({"enabled": True, "barge_in": False})
+    ctl = make_voice_controller(adapter, config=cfg)
+    stopped: list = []
+    ctl.stop_playback = lambda session: stopped.append(session)
+    gw, ok = asyncio.run(join_session(adapter, ctl))
+    assert ok is True
+    session = ctl.session_for_channel(VOICE_CHANNEL)
+    burst = tone(0.4)
+
+    async def scenario():
+        for i in range(0, len(burst), audio_lib.FRAME_SAMPLES):
+            await session.cascade.process_frame_bytes(
+                burst[i:i + audio_lib.FRAME_SAMPLES].tobytes(),
+                participant=SimpleNamespace(identity=f"user_{USER_ID}_conn-2"),
+            )
+
+    asyncio.run(scenario())
+    assert stopped == []
+    assert session.cascade.stats["barges"] == 0
+    asyncio.run(ctl.leave(GUILD))
+
+
+def test_barge_ignores_unauthorized_speaker(fake_env, fake_livekit):
+    """Barge-in is gated by the same fail-closed allowlist as transcripts."""
+    fake_env["FLUXER_ALLOW_ALL_USERS"] = "false"
+    fake_env["FLUXER_ALLOWED_USERS"] = "424242"
+    adapter = make_adapter()
+    ctl = make_voice_controller(adapter)
+    stopped: list = []
+    ctl.stop_playback = lambda session: stopped.append(session)
+    gw, ok = asyncio.run(join_session(adapter, ctl))
+    assert ok is True
+    session = ctl.session_for_channel(VOICE_CHANNEL)
+    burst = tone(0.4)
+
+    async def scenario():
+        for i in range(0, len(burst), audio_lib.FRAME_SAMPLES):
+            await session.cascade.process_frame_bytes(
+                burst[i:i + audio_lib.FRAME_SAMPLES].tobytes(),
+                participant=SimpleNamespace(identity=f"user_{USER_ID}_conn-2"),
+            )
+
+    asyncio.run(scenario())
+    assert stopped == []
+    assert session.cascade.stats["barges"] == 0
+    asyncio.run(ctl.leave(GUILD))
+
+
+
 def test_cascade_reader_via_track_subscribed(fake_env, fake_livekit):
     adapter = make_adapter()
     adapter._rest = FakeREST()
