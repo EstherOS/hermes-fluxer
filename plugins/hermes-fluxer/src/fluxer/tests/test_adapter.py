@@ -713,3 +713,47 @@ def test_standalone_send_media_uploads_and_claims(fake_env, monkeypatch):
     assert create_calls(rest)[0][4] == [
         {"id": 0, "filename": "f.png", "upload_filename": "f.png",
          "file_size": 3, "content_type": "image/png"}]
+
+
+# ── blocked guilds ───────────────────────────────────────────────────────────
+
+def test_blocked_guild_silences_mention_and_logs(fake_env, caplog):
+    fake_env["FLUXER_ALLOW_ALL_USERS"] = "true"
+    adapter = make_adapter(blocked_guilds=[GUILD])
+    with caplog.at_level(logging.INFO, logger=logger_name):
+        events = run_event(adapter, payload(content=f"yo <@{BOT_ID}> check this"))
+    assert events == []
+    assert "guild" in caplog.text and "blocked" in caplog.text
+
+
+def test_blocked_guild_silences_command(fake_env):
+    fake_env["FLUXER_ALLOW_ALL_USERS"] = "true"
+    adapter = make_adapter(blocked_guilds=[GUILD])
+    assert run_event(adapter, payload(content="/stop")) == []
+
+
+def test_blocked_guild_overrides_free_response(fake_env):
+    fake_env["FLUXER_ALLOW_ALL_USERS"] = "true"
+    adapter = make_adapter(blocked_guilds=[GUILD], free_response_channels=[CHANNEL])
+    assert run_event(adapter, payload(content="no mention")) == []
+
+
+def test_blocked_guild_via_env_var(fake_env):
+    fake_env["FLUXER_ALLOW_ALL_USERS"] = "true"
+    fake_env["FLUXER_BLOCKED_GUILDS"] = GUILD
+    adapter = make_adapter()
+    assert run_event(adapter, payload(content=f"<@{BOT_ID}> yo")) == []
+
+
+def test_blocked_guild_dm_unaffected(fake_env):
+    fake_env["FLUXER_ALLOW_ALL_USERS"] = "true"
+    adapter = make_adapter(blocked_guilds=[GUILD])
+    events = run_event(adapter, payload(channel_type=1, guild_id=None, content="dm hi"))
+    assert len(events) == 1
+    assert events[0].source.chat_type == "dm"
+
+
+def test_unblocked_guild_still_triggers(fake_env):
+    fake_env["FLUXER_ALLOW_ALL_USERS"] = "true"
+    adapter = make_adapter(blocked_guilds=["9999999999999999"])
+    assert len(run_event(adapter, payload(content=f"<@{BOT_ID}> yo"))) == 1

@@ -189,6 +189,11 @@ class FluxerAdapter(BasePlatformAdapter, OmniAdapterMixin):
         self._free_response_channels: Set[str] = {
             str(c) for c in (self._extra.get("free_response_channels") or [])
         }
+        # Guilds this bot never answers in — mentions and commands included.
+        # ``FLUXER_BLOCKED_GUILDS`` (env, comma-separated) unions with the extra.
+        self._blocked_guilds: Set[str] = _csv_set(
+            self._extra.get("blocked_guilds")
+        ) | _csv_set(_get_scoped_secret("FLUXER_BLOCKED_GUILDS"))
         self._ignore_bots: bool = _as_bool(self._extra.get("ignore_bots"), default=True)
         # Guild messages need a mention unless the channel is free-response; an explicit
         # ``require_mention: false`` opts into responding to every guild message.
@@ -510,7 +515,7 @@ class FluxerAdapter(BasePlatformAdapter, OmniAdapterMixin):
     # ── inbound: MESSAGE_CREATE filter chain ─────────────────────────────
 
     async def _handle_message_create(self, data: dict) -> None:
-        """Filter chain (spec §2.4): self → bot flag → authorization → trigger → dispatch."""
+        """Filter chain (spec §2.4): self → bot flag → authorization → blocked guild → trigger → dispatch."""
         msg = parse_message(data)
         author = msg.get("author") or {}
         author_id = str(author.get("id") or "")
@@ -551,7 +556,14 @@ class FluxerAdapter(BasePlatformAdapter, OmniAdapterMixin):
         guild_id = msg.get("guild_id")
         is_dm = channel_type in _DM_CHANNEL_TYPES
 
-        # 4. trigger policy
+        # 4. blocked guilds: dead air — mentions and commands included
+        if not is_dm and str(guild_id or "") in self._blocked_guilds:
+            logger.info(
+                "Fluxer: ignored message from %s (guild %s is blocked)", label, guild_id
+            )
+            return
+
+        # 5. trigger policy
         why = self._trigger_reason(chat_id, content, is_dm=is_dm)
         if why is None:
             logger.info(
@@ -561,7 +573,7 @@ class FluxerAdapter(BasePlatformAdapter, OmniAdapterMixin):
             )
             return
 
-        # 5. strip the bot mention, cache attachments, build source + event, dispatch
+        # 6. strip the bot mention, cache attachments, build source + event, dispatch
         text = self._strip_bot_mention(content)
         attachment_data = msg.get("attachments") or []
         media_urls: List[str] = []
