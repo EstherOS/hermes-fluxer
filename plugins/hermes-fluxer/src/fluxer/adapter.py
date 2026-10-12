@@ -140,6 +140,37 @@ def _is_wellformed_token(token: Any) -> bool:
 # ── adapter ──────────────────────────────────────────────────────────────────
 
 
+class _VoiceEchoChannel:
+    """Channel-shaped handle for the gateway's voice-transcript echo.
+
+    The core voice path posts STT transcripts via
+    ``adapter._client.get_channel(<id>).send(<text>)``; this shim satisfies that
+    seam with the Fluxer REST client.
+    """
+
+    def __init__(self, rest: "FluxerREST", chat_id: Any) -> None:
+        self._rest = rest
+        self._chat_id = str(chat_id)
+
+    async def send(self, content: str = "", **kwargs: Any) -> None:
+        await self._rest.create_message(self._chat_id, content=str(content or ""))
+
+
+class _GatewayClientShim:
+    """Minimal ``_client`` stand-in (see :class:`_VoiceEchoChannel`)."""
+
+    def __init__(self, adapter: "FluxerAdapter") -> None:
+        self._adapter = adapter
+
+    def get_channel(self, chat_id: Any) -> Optional[_VoiceEchoChannel]:
+        rest = self._adapter._rest
+        if rest is None or chat_id is None:
+            return None
+        return _VoiceEchoChannel(rest, chat_id)
+
+
+
+
 class FluxerAdapter(BasePlatformAdapter, OmniAdapterMixin):
     """Fluxer bot adapter — guild channels + DMs; text + attachments."""
 
@@ -202,6 +233,9 @@ class FluxerAdapter(BasePlatformAdapter, OmniAdapterMixin):
         self._voice_sources: Dict[int, dict] = {}
         self._voice_input_callback = None
         self._last_command_source: Optional[dict] = None
+        # Gateway voice-transcript echo seam: the core posts STT echoes through
+        # ``adapter._client.get_channel(...)`` — satisfied by this shim.
+        self._client = _GatewayClientShim(self)
         # ── omni engine (voice sessions run through the omni graph) ──────────
         self._omni_cfg: dict | None = None
         self._omni_session: Any | None = None

@@ -521,7 +521,7 @@ class VoiceController:
         if session.cascade is None:
             omni_session = getattr(self.adapter, '_omni_session', None)
             if omni_session is not None:
-                from fluxer.voice.omni_bridge import OmniVoiceBridge
+                from .omni_bridge import OmniVoiceBridge
                 bridge = OmniVoiceBridge(self.adapter, omni_session, session,
                                          self.config)
                 # Wire output callback → controller's serialized publisher
@@ -529,8 +529,11 @@ class VoiceController:
                 bridge.on_stop_playback = lambda: self.stop_playback(session)
                 session.cascade = bridge
             else:
-                # No omni session configured — no voice pipeline available
-                session.cascade = None
+                # No engine profile configured — Hermes' own voice pipeline drives the
+                # session (VAD → Hermes STT → the core voice-input callback → spoken reply).
+                from .cascade import VoiceCascade
+                session.cascade = VoiceCascade(
+                    session, self.adapter, self.config, stt=self._stt_override)
         if session.cascade is not None:
             session.cascade.start()
         log.info(
