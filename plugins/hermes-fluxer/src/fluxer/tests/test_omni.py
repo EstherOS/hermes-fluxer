@@ -1,4 +1,4 @@
-"""Unit tests for the omni engine seams (wave 4): registry, profiles, cascade.
+"""Unit tests for the omni engine seams: registry, profiles, cascade.
 
 Conventions match the rest of the fluxer suite: no pytest-asyncio — async
 paths run via ``asyncio.run`` inside sync test functions.  Subprocess work is

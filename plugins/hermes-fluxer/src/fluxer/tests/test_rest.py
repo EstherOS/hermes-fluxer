@@ -1,10 +1,4 @@
-"""Unit tests for ``fluxer.rest`` — no network, local aiohttp test servers.
-
-Run::
-
-    cd /home/agent/.hermes/hermes-agent
-    ./venv/bin/python -m pytest /home/agent/workspace/fluxer/plugin-src/fluxer/tests/test_rest.py -q
-"""
+"""Unit tests for ``fluxer.rest`` — no network, local aiohttp test servers."""
 
 from __future__ import annotations
 

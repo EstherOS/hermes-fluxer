@@ -1,10 +1,4 @@
-"""Unit tests for ``fluxer.gatewayws`` — local websockets mock servers, no internet.
-
-Run::
-
-    cd /home/agent/.hermes/hermes-agent
-    ./venv/bin/python -m pytest /home/agent/workspace/fluxer/plugin-src/fluxer/tests/test_gatewayws.py -q
-"""
+"""Unit tests for ``fluxer.gatewayws`` — local websockets mock servers, no internet."""
 
 from __future__ import annotations
 

@@ -1,9 +1,4 @@
-"""Unit tests for the fluxer adapter (spec §2.4) — no network, fake clients only.
-
-Run::
-
-    cd /home/agent/.hermes/hermes-agent
-    ./venv/bin/python -m pytest /home/agent/workspace/fluxer/plugin-src/fluxer/tests/test_adapter.py -q
+"""Unit tests for the fluxer adapter — no network, fake clients only.
 
 Covers: the MESSAGE_CREATE filter chain (each gate + trigger policy), mention strip,
 outbound chunking (≤4000, newline-aware), send error mapping (retryable on 5xx /
