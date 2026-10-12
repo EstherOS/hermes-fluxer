@@ -30,9 +30,9 @@ from gateway.platforms.event import MessageEvent, MessageType
 
 logger = logging.getLogger(__name__)
 
-# ── backward-compatible omni import ───────────────────────────────────────────
-# Prefer the migrated hermes_omni package; fall back to the local .omni modules
-# so the adapter works both in a monorepo layout and a standalone installation.
+# ── omni engine import ────────────────────────────────────────────────────────
+# Prefer the installed omnimaker package; fall back to the in-tree omni package.
+# With neither available the adapter still loads (text-only mode).
 _omni_imported = False
 _omni_import_error: str | None = None
 try:
@@ -63,7 +63,7 @@ from .voice.config import VoiceConfig, parse_voice_config
 from .voice.controller import VoiceChannelRef, VoiceController
 from .adapter_omni_mixin import OmniAdapterMixin
 
-# Events routed to the voice controller (wave 3, spec §6-W3).
+# Events routed to the voice controller.
 _VOICE_EVENT_TYPES = frozenset(
     {"VOICE_SERVER_UPDATE", "VOICE_STATE_UPDATE", "GUILD_CREATE"}
 )
@@ -75,8 +75,8 @@ MAX_MESSAGE_LENGTH = 4000
 # ``send_typing`` self-throttle; the base ``_keep_typing`` loop polls faster than this.
 TYPING_THROTTLE_SECONDS = 8.0
 _TRUTHY = {"1", "true", "yes", "on"}
-# Channel types (api notes §2): 1 = DM, 3 = group DM; the rest of the wave-1 text
-# scope (0 text, 2 guild voice, 5 guild link, 998 extended) is guild-shaped.
+# Channel types (api notes §2): 1 = DM, 3 = group DM; everything else
+# (0 text, 2 guild voice, 5 guild link, 998 extended) is guild-shaped.
 _DM_CHANNEL_TYPES = {1, 3}
 
 
@@ -141,7 +141,7 @@ def _is_wellformed_token(token: Any) -> bool:
 
 
 class FluxerAdapter(BasePlatformAdapter, OmniAdapterMixin):
-    """Fluxer bot adapter — guild channels + DMs; text + attachments (waves 1–2)."""
+    """Fluxer bot adapter — guild channels + DMs; text + attachments."""
 
     MAX_MESSAGE_LENGTH = MAX_MESSAGE_LENGTH
     MAX_ATTACHMENTS_PER_MESSAGE = (
@@ -188,7 +188,7 @@ class FluxerAdapter(BasePlatformAdapter, OmniAdapterMixin):
         self._channel_names: Dict[str, str] = {}  # lazily cached chat names
         self._last_typing: Dict[str, float] = {}  # send_typing self-throttle
         self._unauthorized_logged: Set[str] = set()
-        # ── voice lane (wave 3, spec §6-W3) ──────────────────────────────
+        # ── voice lane ───────────────────────────────────────────────────────
         # Config parses eagerly (cheap, total); the controller is built lazily and
         # stays inert when voice.enabled=false or livekit is missing.
         self._voice_cfg: VoiceConfig = parse_voice_config(
@@ -202,11 +202,11 @@ class FluxerAdapter(BasePlatformAdapter, OmniAdapterMixin):
         self._voice_sources: Dict[int, dict] = {}
         self._voice_input_callback = None
         self._last_command_source: Optional[dict] = None
-        # ── hermes-omni engine (replaces old voice dispatch when configured) ─
+        # ── omni engine (voice sessions run through the omni graph) ──────────
         self._omni_cfg: dict | None = None
         self._omni_session: Any | None = None
-        # Load the omni section from the root config file — it's at YAML root,
-        # not inside the platform config subtree passed to __init__.
+        # The omni: section lives at the config.yaml root — not inside the
+        # platform config subtree passed to __init__.
         try:
             import os, yaml
             config_path = os.environ.get("HERMES_HOME", str(Path.home() / ".hermes"))
@@ -221,10 +221,10 @@ class FluxerAdapter(BasePlatformAdapter, OmniAdapterMixin):
         if self._omni_cfg and _omni_imported:
             try:
                 self._init_omni_backends(self._omni_cfg)
-                logger.info("Fluxer: hermes-omni engine initialised from config")
+                logger.info("Fluxer: omni engine initialised from config")
             except Exception as exc:
                 logger.warning(
-                    "Fluxer: hermes-omni init failed (%s); falling back to legacy voice",
+                    "Fluxer: omni engine init failed (%s); no voice pipeline available",
                     exc,
                 )
 
@@ -250,7 +250,7 @@ class FluxerAdapter(BasePlatformAdapter, OmniAdapterMixin):
         self._set_fatal_error(code, message, retryable=retryable)
         return False
 
-    # ── voice lane plumbing (wave 3, spec §6-W3) ─────────────────────────
+    # ── voice lane plumbing ──────────────────────────────────────────────
 
     def _voice_controller(self) -> Optional[VoiceController]:
         """Lazily build the voice controller; None when disabled or livekit missing.
@@ -417,7 +417,7 @@ class FluxerAdapter(BasePlatformAdapter, OmniAdapterMixin):
     # ── gateway events ───────────────────────────────────────────────────
 
     async def _on_gateway_event(self, event_type: str, data: dict) -> None:
-        """WS dispatch router — wave 1 handles MESSAGE_CREATE; wave 3 routes voice."""
+        """WS dispatch router — MESSAGE_CREATE to the message path, voice events to the controller."""
         if event_type == "MESSAGE_CREATE":
             try:
                 await self._handle_message_create(data or {})
@@ -527,7 +527,7 @@ class FluxerAdapter(BasePlatformAdapter, OmniAdapterMixin):
             )
             return
 
-        # 5. strip the bot mention, cache attachments (wave 2), build source + event, dispatch
+        # 5. strip the bot mention, cache attachments, build source + event, dispatch
         text = self._strip_bot_mention(content)
         attachment_data = msg.get("attachments") or []
         media_urls: List[str] = []
@@ -586,7 +586,7 @@ class FluxerAdapter(BasePlatformAdapter, OmniAdapterMixin):
         )
         # Voice lane: remember the /voice command source so `session_binding: invoke`
         # can bind to the channel the command came from; expose guild context via
-        # raw_message so core helpers (run_voice._get_guild_id) work on Fluxer too.
+        # raw_message so core helpers (run_voice._get_guild_id) find it on Fluxer.
         if content.lstrip().startswith("/voice"):
             self._last_command_source = source.to_dict()
             # Intercept DM /voice join/leave locally — the core handlers need a
@@ -741,7 +741,7 @@ class FluxerAdapter(BasePlatformAdapter, OmniAdapterMixin):
         reply_to: Optional[str],
         metadata: Optional[Dict[str, Any]],
     ) -> SendResult:
-        """``send()`` for a chat owned by a voice session (wave 3, spec §6-W3).
+        """``send()`` for a chat owned by a voice session.
 
         ``transcripts: channel`` posts the text and speaks it; ``off`` speaks
         only.  A piper failure with transcripts off falls back to a text post so
@@ -900,7 +900,7 @@ class FluxerAdapter(BasePlatformAdapter, OmniAdapterMixin):
             continuation_message_ids=tuple(sent_ids),
         )
 
-    # ── outbound: media (wave 2, spec §6-W2) ─────────────────────────────
+    # ── outbound: media ──────────────────────────────────────────────────
 
     async def _send_media(
         self,
@@ -1100,13 +1100,12 @@ class FluxerAdapter(BasePlatformAdapter, OmniAdapterMixin):
     ) -> SendResult:
         """Send audio as an attachment, attempting the native VOICE_MESSAGE flag (8192).
 
-        One attempt with the flag; if create-message 400s on it the flag is
-        dropped and the message retried without it — live-verified requirements
-        for a native voice note: no text content (``VOICE_MESSAGES_CANNOT_HAVE_CONTENT``)
-        and ``waveform`` data on the attachment claim
-        (``VOICE_MESSAGES_ATTACHMENT_WAVEFORM_REQUIRED``); the audio therefore
-        still reaches the channel as a plain attachment.  Waveform synthesis is
-        a voice-lane (W3/C4) follow-up.
+        One attempt with the flag; on a 400 the flag is dropped and the message
+        retried without it — Fluxer rejects the flag with
+        ``VOICE_MESSAGES_CANNOT_HAVE_CONTENT`` when a caption rides along and
+        ``VOICE_MESSAGES_ATTACHMENT_WAVEFORM_REQUIRED`` when the claim lacks
+        ``waveform`` data.  Waveform data is not synthesized, so audio arrives
+        as a plain attachment.
         """
         return await self._send_media(
             chat_id,
@@ -1170,7 +1169,7 @@ class FluxerAdapter(BasePlatformAdapter, OmniAdapterMixin):
 
         URL entries are downloaded to temp files first (Fluxer renders only
         uploaded attachments).  Returns success when at least one image was
-        delivered — the base contract (#106153: a media-only turn must not
+        delivered — the base contract: a media-only turn must not
         report FAILURE when images went out).
         """
         if not images:
@@ -1369,7 +1368,7 @@ class FluxerAdapter(BasePlatformAdapter, OmniAdapterMixin):
             return None
         return await ctl.get_user_voice_channel(str(guild_id), str(user_id))
 
-    # ── voice-mode context preamble (wave 5, voice UX) ────────────────────
+    # ── voice-mode context preamble ───────────────────────────────────────
 
     def _voice_input_prompt_for_chat(self, chat_id: Any) -> Optional[str]:
         """Voice-mode ephemeral preamble for turns in a voice-bound channel.
@@ -1399,7 +1398,7 @@ class FluxerAdapter(BasePlatformAdapter, OmniAdapterMixin):
         """
         return self._voice_input_prompt_for_chat(str(channel_id))
 
-    # ── DM /voice commands (wave 5, voice UX) ─────────────────────────────
+    # ── DM /voice commands ────────────────────────────────────────────────
 
     async def _handle_dm_voice_command(
         self, *, content: str, chat_id: str, author_id: str, source: Any
@@ -1696,7 +1695,7 @@ async def _standalone_send(
 
 
 def register(ctx):
-    """Plugin entry point: called by the Hermes plugin system (spec §2.4)."""
+    """Plugin entry point: called by the Hermes plugin system."""
     ctx.register_platform(
         name="fluxer",
         label="Fluxer",
