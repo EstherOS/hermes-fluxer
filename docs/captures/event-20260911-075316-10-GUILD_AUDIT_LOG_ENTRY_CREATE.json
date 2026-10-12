@@ -1,0 +1,16 @@
+{
+ "op": 0,
+ "t": "GUILD_AUDIT_LOG_ENTRY_CREATE",
+ "s": 10,
+ "d": {
+  "action_type": 73,
+  "guild_id": "9991000000000000002",
+  "id": "9991000000000000017",
+  "options": {
+   "channel_id": "9991000000000000005",
+   "count": "2"
+  },
+  "target_id": null,
+  "user_id": "9991000000000000007"
+ }
+}
