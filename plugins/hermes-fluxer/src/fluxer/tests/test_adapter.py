@@ -1,6 +1,7 @@
 """Unit tests for the fluxer adapter — no network, fake clients only.
 
-Covers: the MESSAGE_CREATE filter chain (each gate + trigger policy), mention strip,
+Covers: the MESSAGE_CREATE filter chain (each gate + trigger policy + chain breaker),
+mention strip,
 outbound chunking (≤4000, newline-aware), send error mapping (retryable on 5xx /
 429-exhausted), typing throttle, env_enablement, platform-lock ordering, register().
 """
@@ -196,6 +197,72 @@ def test_filter_bot_sender_requires_mention_in_free_response_thread(fake_env):
     # ...but an explicit mention does.
     assert len(run_event(adapter, payload(
         bot=True, content=f"<@{BOT_ID}> hi", channel_id=thread, channel_type=11))) == 1
+
+
+# ── chain breaker (bot-wake depth net) ───────────────────────────────────────
+
+def test_chain_breaker_parks_after_cap_with_one_notice(fake_env):
+    fake_env["FLUXER_ALLOW_ALL_USERS"] = "true"
+    adapter = make_adapter(ignore_bots=False)
+    adapter._rest = FakeREST()
+    # Default cap 6: six consecutive bot wakes flow...
+    for i in range(6):
+        assert len(run_event(adapter, payload(bot=True, content=f"<@{BOT_ID}> hop {i}"))) == 1
+    # ...the seventh and beyond are refused while parked.
+    assert run_event(adapter, payload(bot=True, content=f"<@{BOT_ID}> hop 7")) == []
+    assert run_event(adapter, payload(bot=True, content=f"<@{BOT_ID}> hop 8")) == []
+    assert CHANNEL in adapter._chain_parked
+    creates = create_calls(adapter._rest)
+    assert len(creates) == 1  # exactly one in-channel notice per park episode
+    assert creates[0][1] == CHANNEL
+    assert "parked" in creates[0][2].lower()
+
+
+def test_chain_breaker_human_post_resets_and_unparks(fake_env):
+    fake_env["FLUXER_ALLOW_ALL_USERS"] = "true"
+    adapter = make_adapter(ignore_bots=False, chain_breaker_max_hops=2)
+    adapter._rest = FakeREST()
+    assert len(run_event(adapter, payload(bot=True, content=f"<@{BOT_ID}> a"))) == 1
+    assert len(run_event(adapter, payload(bot=True, content=f"<@{BOT_ID}> b"))) == 1
+    assert run_event(adapter, payload(bot=True, content=f"<@{BOT_ID}> c")) == []  # parked
+    # A human post that wakes nobody (no mention) still resets the sequence...
+    assert run_event(adapter, payload(bot=False, content="carry on")) == []
+    assert CHANNEL not in adapter._chain_parked
+    # ...and bot wakes flow again.
+    assert len(run_event(adapter, payload(bot=True, content=f"<@{BOT_ID}> d"))) == 1
+
+
+def test_chain_breaker_second_episode_posts_a_second_notice(fake_env):
+    fake_env["FLUXER_ALLOW_ALL_USERS"] = "true"
+    adapter = make_adapter(ignore_bots=False, chain_breaker_max_hops=1)
+    adapter._rest = FakeREST()
+    assert len(run_event(adapter, payload(bot=True, content=f"<@{BOT_ID}> a"))) == 1
+    assert run_event(adapter, payload(bot=True, content=f"<@{BOT_ID}> b")) == []  # parks
+    assert run_event(adapter, payload(bot=False, content="reset")) == []
+    assert len(run_event(adapter, payload(bot=True, content=f"<@{BOT_ID}> c"))) == 1
+    assert run_event(adapter, payload(bot=True, content=f"<@{BOT_ID}> d")) == []  # parks
+    assert len(create_calls(adapter._rest)) == 2  # one notice per episode
+
+
+def test_chain_breaker_non_triggering_bot_posts_do_not_count(fake_env):
+    fake_env["FLUXER_ALLOW_ALL_USERS"] = "true"
+    adapter = make_adapter(ignore_bots=False, chain_breaker_max_hops=1)
+    # Unmentioned bot posts never wake us and never count toward the cap...
+    for _ in range(3):
+        assert run_event(adapter, payload(bot=True, content="quiet update")) == []
+    # ...so a first addressed wake still flows, and a second one parks.
+    assert len(run_event(adapter, payload(bot=True, content=f"<@{BOT_ID}> ping"))) == 1
+    assert run_event(adapter, payload(bot=True, content=f"<@{BOT_ID}> ping 2")) == []
+
+
+def test_chain_breaker_zero_disables(fake_env):
+    fake_env["FLUXER_ALLOW_ALL_USERS"] = "true"
+    adapter = make_adapter(ignore_bots=False, chain_breaker_max_hops=0)
+    adapter._rest = FakeREST()
+    for i in range(8):
+        assert len(run_event(adapter, payload(bot=True, content=f"<@{BOT_ID}> {i}"))) == 1
+    assert not adapter._chain_parked
+    assert create_calls(adapter._rest) == []
 
 
 def test_filter_unauthorized_users_fail_closed(fake_env):
