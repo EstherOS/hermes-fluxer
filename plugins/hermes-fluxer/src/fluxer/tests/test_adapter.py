@@ -757,3 +757,24 @@ def test_unblocked_guild_still_triggers(fake_env):
     fake_env["FLUXER_ALLOW_ALL_USERS"] = "true"
     adapter = make_adapter(blocked_guilds=["9999999999999999"])
     assert len(run_event(adapter, payload(content=f"<@{BOT_ID}> yo"))) == 1
+
+
+def test_blocked_guild_exception_channel_triggers(fake_env):
+    fake_env["FLUXER_ALLOW_ALL_USERS"] = "true"
+    adapter = make_adapter(blocked_guilds=[GUILD],
+                           blocked_guilds_allowed_channels=[CHANNEL])
+    assert len(run_event(adapter, payload(content=f"<@{BOT_ID}> yo"))) == 1
+
+
+def test_blocked_guild_exception_channel_still_mention_gated(fake_env):
+    fake_env["FLUXER_ALLOW_ALL_USERS"] = "true"
+    adapter = make_adapter(blocked_guilds=[GUILD],
+                           blocked_guilds_allowed_channels=[CHANNEL])
+    assert run_event(adapter, payload(content="no mention here")) == []
+
+
+def test_blocked_guild_exception_other_channel_still_silent(fake_env):
+    fake_env["FLUXER_ALLOW_ALL_USERS"] = "true"
+    adapter = make_adapter(blocked_guilds=[GUILD],
+                           blocked_guilds_allowed_channels=["9999999999999999"])
+    assert run_event(adapter, payload(content=f"<@{BOT_ID}> yo")) == []

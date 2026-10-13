@@ -194,6 +194,11 @@ class FluxerAdapter(BasePlatformAdapter, OmniAdapterMixin):
         self._blocked_guilds: Set[str] = _csv_set(
             self._extra.get("blocked_guilds")
         ) | _csv_set(_get_scoped_secret("FLUXER_BLOCKED_GUILDS"))
+        # Channels that escape a guild block (e.g. a shared agents room inside an
+        # otherwise-silent guild); normal mention-gated behavior applies there.
+        self._blocked_guilds_allowed_channels: Set[str] = _csv_set(
+            self._extra.get("blocked_guilds_allowed_channels")
+        )
         self._ignore_bots: bool = _as_bool(self._extra.get("ignore_bots"), default=True)
         # Guild messages need a mention unless the channel is free-response; an explicit
         # ``require_mention: false`` opts into responding to every guild message.
@@ -557,7 +562,11 @@ class FluxerAdapter(BasePlatformAdapter, OmniAdapterMixin):
         is_dm = channel_type in _DM_CHANNEL_TYPES
 
         # 4. blocked guilds: dead air — mentions and commands included
-        if not is_dm and str(guild_id or "") in self._blocked_guilds:
+        if (
+            not is_dm
+            and str(guild_id or "") in self._blocked_guilds
+            and chat_id not in self._blocked_guilds_allowed_channels
+        ):
             logger.info(
                 "Fluxer: ignored message from %s (guild %s is blocked)", label, guild_id
             )
