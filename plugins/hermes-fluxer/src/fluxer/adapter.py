@@ -79,6 +79,16 @@ _TRUTHY = {"1", "true", "yes", "on"}
 # (0 text, 2 guild voice, 5 guild link, 998 extended) is guild-shaped.
 _DM_CHANNEL_TYPES = {1, 3}
 
+# ── bot-wake chain breaker (bot↔bot lane) ────────────────────────────────────
+# Consecutive bot-authored wakes allowed per channel before it parks; any human
+# post in the channel resets the sequence. ``chain_breaker_max_hops`` (platform
+# extra) overrides the default; 0 disables the breaker.
+_CHAIN_BREAKER_DEFAULT_MAX_HOPS = 6
+_CHAIN_BREAKER_NOTICE = (
+    "⏸ Bot↔bot chain parked: {cap} consecutive bot wakes here with no human "
+    "message between them. Bot wakes resume after any human post in this channel."
+)
+
 
 # ── small helpers ────────────────────────────────────────────────────────────
 
@@ -229,6 +239,13 @@ class FluxerAdapter(BasePlatformAdapter, OmniAdapterMixin):
         self._channel_names: Dict[str, str] = {}  # lazily cached chat names
         self._last_typing: Dict[str, float] = {}  # send_typing self-throttle
         self._unauthorized_logged: Set[str] = set()
+        # ── bot-wake chain breaker (depth net) ──────────────────────────────
+        # Consecutive bot-authored wakes per channel; any human post resets.
+        # At ``chain_breaker_max_hops`` the channel parks (wakes refused, one
+        # in-channel notice; no auto-release) until a human posts.
+        self._chain_depth: Dict[str, int] = {}
+        self._chain_parked: Set[str] = set()
+        self._chain_notice_sent: Set[str] = set()
         # ── voice lane ───────────────────────────────────────────────────────
         # Config parses eagerly (cheap, total); the controller is built lazily and
         # stays inert when voice.enabled=false or livekit is missing.
@@ -520,7 +537,7 @@ class FluxerAdapter(BasePlatformAdapter, OmniAdapterMixin):
     # ── inbound: MESSAGE_CREATE filter chain ─────────────────────────────
 
     async def _handle_message_create(self, data: dict) -> None:
-        """Filter chain (spec §2.4): self → bot flag → authorization → blocked guild → trigger → dispatch."""
+        """Filter chain (spec §2.4): self → bot flag → authorization → blocked guild → trigger → chain gate → dispatch."""
         msg = parse_message(data)
         author = msg.get("author") or {}
         author_id = str(author.get("id") or "")
@@ -560,6 +577,7 @@ class FluxerAdapter(BasePlatformAdapter, OmniAdapterMixin):
         channel_type = msg.get("channel_type")
         guild_id = msg.get("guild_id")
         is_dm = channel_type in _DM_CHANNEL_TYPES
+        is_bot = bool(author.get("bot"))
 
         # 4. blocked guilds: dead air — mentions and commands included
         if (
@@ -572,8 +590,43 @@ class FluxerAdapter(BasePlatformAdapter, OmniAdapterMixin):
             )
             return
 
+        # 4b. chain breaker bookkeeping — any human post ends the current bot-wake
+        # sequence, even one that wakes nobody; bot-wake refusal/parking happens
+        # with the trigger decision below.
+        if not is_bot:
+            self._chain_breaker_reset(chat_id)
+
         # 5. trigger policy
-        why = self._trigger_reason(chat_id, content, is_dm=is_dm)
+        why = self._trigger_reason(chat_id, content, is_dm=is_dm, is_bot=is_bot)
+        if (
+            why is None
+            and not is_dm
+            and self._free_response_channels
+            and not (is_bot and self._bots_mention_only())
+        ):
+            # Forum posts are threads (channel type 11) with their own channel_id whose
+            # parent_id is the forum; a thread inherits free-response from its parent.
+            # Parent ids are cached per channel; lookup failures fail closed.
+            parents = getattr(self, "_thread_parents", None)
+            if parents is None:
+                parents = self._thread_parents = {}
+            parent = parents.get(chat_id)
+            if parent is None and self._rest is not None:
+                try:
+                    _chan = await self._rest.get_channel(chat_id)
+                    if isinstance(_chan, dict):
+                        parent = str(_chan.get("parent_id") or "") or None
+                        parents[chat_id] = parent
+                except Exception as _e:
+                    logger.debug(
+                        "Fluxer: thread parent lookup failed for %s: %s", chat_id, _e
+                    )
+            if parent and parent in self._free_response_channels:
+                why = "free_response_thread"
+        # 5b. chain breaker: refuse a bot wake once this channel has parked.
+        if why is not None and is_bot and not is_dm:
+            if not await self._chain_breaker_gate(chat_id, label):
+                return
         if why is None:
             logger.info(
                 "Fluxer: ignored message from %s (no trigger: mention required in %s)",
@@ -677,12 +730,18 @@ class FluxerAdapter(BasePlatformAdapter, OmniAdapterMixin):
         await self.handle_message(event)
 
     def _trigger_reason(
-        self, chat_id: str, content: str, *, is_dm: bool
+        self, chat_id: str, content: str, *, is_dm: bool, is_bot: bool = False
     ) -> Optional[str]:
         """Why this message should reach the agent, or None to drop it."""
         if is_dm:
             return "dm"  # DMs always trigger for authorized users
-        if self._is_free_response(chat_id):
+        # Peer bots never wake the agent implicitly: free-response channels and
+        # require_mention:false do not apply to bot senders unless the operator
+        # opts in via ``bots_mention_only: false``. An explicit mention, command,
+        # or configured mention pattern still triggers. Conservative by design —
+        # two bots cannot mirror each other into a loop off an unaddressed message.
+        bots_mention_only = is_bot and self._bots_mention_only()
+        if self._is_free_response(chat_id) and not bots_mention_only:
             return "free_response"
         stripped = self._strip_bot_mention(content)
         if content.lstrip().startswith("/") or stripped.startswith("/"):
@@ -691,9 +750,86 @@ class FluxerAdapter(BasePlatformAdapter, OmniAdapterMixin):
             return "mention"
         if any(pattern.search(content) for pattern in self._mention_patterns):
             return "mention_pattern"
-        if not self._require_mention:
+        if not self._require_mention and not bots_mention_only:
             return "require_mention_disabled"
         return None
+
+    def _bots_mention_only(self) -> bool:
+        """Bot-authored messages require an explicit address (default true).
+
+        ``platforms.<name>.bots_mention_only: false`` restores the old behavior
+        where bot senders also trigger free-response channels/threads.
+        """
+        return _as_bool(self._extra.get("bots_mention_only"), default=True)
+
+    # ── chain breaker (bot-wake depth net; bot↔bot lane) ────────────────────
+
+    def _chain_breaker_max_hops(self) -> int:
+        """Consecutive bot wakes per channel before parking (default 6; 0 disables).
+
+        Platform extra: ``platforms.<name>.chain_breaker_max_hops: N``.
+        """
+        value = _int_or_none(self._extra.get("chain_breaker_max_hops"))
+        if value is None:
+            return _CHAIN_BREAKER_DEFAULT_MAX_HOPS
+        return max(0, value)
+
+    def _chain_breaker_reset(self, chat_id: str) -> None:
+        """A human post ends the current bot-wake sequence (even if it wakes nobody)."""
+        self._chain_depth.pop(chat_id, None)
+        if chat_id in self._chain_parked:
+            self._chain_parked.discard(chat_id)
+            logger.info("Fluxer: chain breaker unparked %s (human post)", chat_id)
+        self._chain_notice_sent.discard(chat_id)
+
+    async def _chain_breaker_gate(self, chat_id: str, label: str) -> bool:
+        """Depth net in front of bot wakes: True = admit (and count), False = refuse.
+
+        Once ``chain_breaker_max_hops`` consecutive bot wakes happened without a
+        human post, the channel parks: further bot wakes are refused (INFO for
+        the park, DEBUG after) and the channel gets ONE notice, posted here.
+        v1 has no auto-release — only a human post unpark (``_chain_breaker_reset``).
+        """
+        cap = self._chain_breaker_max_hops()
+        if not cap:
+            return True
+        depth = self._chain_depth.get(chat_id, 0)
+        if chat_id in self._chain_parked or depth >= cap:
+            if chat_id not in self._chain_parked:
+                self._chain_parked.add(chat_id)
+                logger.info(
+                    "Fluxer: chain breaker parked %s — %d consecutive bot wakes, "
+                    "no human post (cap %d; last from %s)",
+                    chat_id,
+                    depth,
+                    cap,
+                    label,
+                )
+            else:
+                logger.debug(
+                    "Fluxer: chain breaker refused a bot wake from %s in %s (parked)",
+                    label,
+                    chat_id,
+                )
+            await self._chain_breaker_notice(chat_id, cap)
+            return False
+        self._chain_depth[chat_id] = depth + 1
+        return True
+
+    async def _chain_breaker_notice(self, chat_id: str, cap: int) -> None:
+        """Post the ONE in-channel notice per park episode (best-effort)."""
+        if chat_id in self._chain_notice_sent or self._rest is None:
+            return
+        try:
+            await self._rest.create_message(
+                chat_id, content=_CHAIN_BREAKER_NOTICE.format(cap=cap)
+            )
+        except Exception as e:
+            logger.warning(
+                "Fluxer: chain-breaker notice failed for %s: %s", chat_id, e
+            )
+            return
+        self._chain_notice_sent.add(chat_id)
 
     def _is_free_response(self, chat_id: str) -> bool:
         return (
