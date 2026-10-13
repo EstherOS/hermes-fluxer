@@ -10,8 +10,11 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-import yaml
-
+# No module-level `import yaml` here: the Hermes runtime ships ruamel.yaml, not
+# PyYAML, so this unused import made the whole plugin fail to register with
+# "No module named 'yaml'" — including text-only mode. Nothing in this mixin
+# touches yaml; the adapter reads the `omni:` config itself via a guarded lazy
+# import (adapter.py), which is the right place for it.
 logger = logging.getLogger(__name__)
 
 
