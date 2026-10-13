@@ -560,6 +560,7 @@ class FluxerAdapter(BasePlatformAdapter, OmniAdapterMixin):
         channel_type = msg.get("channel_type")
         guild_id = msg.get("guild_id")
         is_dm = channel_type in _DM_CHANNEL_TYPES
+        is_bot = bool(author.get("bot"))
 
         # 4. blocked guilds: dead air — mentions and commands included
         if (
@@ -573,7 +574,32 @@ class FluxerAdapter(BasePlatformAdapter, OmniAdapterMixin):
             return
 
         # 5. trigger policy
-        why = self._trigger_reason(chat_id, content, is_dm=is_dm)
+        why = self._trigger_reason(chat_id, content, is_dm=is_dm, is_bot=is_bot)
+        if (
+            why is None
+            and not is_dm
+            and self._free_response_channels
+            and not (is_bot and self._bots_mention_only())
+        ):
+            # Forum posts are threads (channel type 11) with their own channel_id whose
+            # parent_id is the forum; a thread inherits free-response from its parent.
+            # Parent ids are cached per channel; lookup failures fail closed.
+            parents = getattr(self, "_thread_parents", None)
+            if parents is None:
+                parents = self._thread_parents = {}
+            parent = parents.get(chat_id)
+            if parent is None and self._rest is not None:
+                try:
+                    _chan = await self._rest.get_channel(chat_id)
+                    if isinstance(_chan, dict):
+                        parent = str(_chan.get("parent_id") or "") or None
+                        parents[chat_id] = parent
+                except Exception as _e:
+                    logger.debug(
+                        "Fluxer: thread parent lookup failed for %s: %s", chat_id, _e
+                    )
+            if parent and parent in self._free_response_channels:
+                why = "free_response_thread"
         if why is None:
             logger.info(
                 "Fluxer: ignored message from %s (no trigger: mention required in %s)",
@@ -677,12 +703,18 @@ class FluxerAdapter(BasePlatformAdapter, OmniAdapterMixin):
         await self.handle_message(event)
 
     def _trigger_reason(
-        self, chat_id: str, content: str, *, is_dm: bool
+        self, chat_id: str, content: str, *, is_dm: bool, is_bot: bool = False
     ) -> Optional[str]:
         """Why this message should reach the agent, or None to drop it."""
         if is_dm:
             return "dm"  # DMs always trigger for authorized users
-        if self._is_free_response(chat_id):
+        # Peer bots never wake the agent implicitly: free-response channels and
+        # require_mention:false do not apply to bot senders unless the operator
+        # opts in via ``bots_mention_only: false``. An explicit mention, command,
+        # or configured mention pattern still triggers. Conservative by design —
+        # two bots cannot mirror each other into a loop off an unaddressed message.
+        bots_mention_only = is_bot and self._bots_mention_only()
+        if self._is_free_response(chat_id) and not bots_mention_only:
             return "free_response"
         stripped = self._strip_bot_mention(content)
         if content.lstrip().startswith("/") or stripped.startswith("/"):
@@ -691,9 +723,17 @@ class FluxerAdapter(BasePlatformAdapter, OmniAdapterMixin):
             return "mention"
         if any(pattern.search(content) for pattern in self._mention_patterns):
             return "mention_pattern"
-        if not self._require_mention:
+        if not self._require_mention and not bots_mention_only:
             return "require_mention_disabled"
         return None
+
+    def _bots_mention_only(self) -> bool:
+        """Bot-authored messages require an explicit address (default true).
+
+        ``platforms.<name>.bots_mention_only: false`` restores the old behavior
+        where bot senders also trigger free-response channels/threads.
+        """
+        return _as_bool(self._extra.get("bots_mention_only"), default=True)
 
     def _is_free_response(self, chat_id: str) -> bool:
         return (

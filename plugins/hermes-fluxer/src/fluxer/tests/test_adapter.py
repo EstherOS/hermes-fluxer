@@ -155,9 +155,47 @@ def test_filter_bot_message_dropped_by_default(fake_env):
 def test_filter_bot_message_allowed_when_ignore_bots_false(fake_env):
     fake_env["FLUXER_ALLOW_ALL_USERS"] = "true"
     adapter = make_adapter(ignore_bots=False)
-    adapter._require_mention = False
-    events = run_event(adapter, payload(bot=True, content="webhook-ish"))
+    events = run_event(adapter, payload(bot=True, content=f"<@{BOT_ID}> webhook-ish"))
     assert len(events) == 1
+
+
+def test_filter_bot_sender_is_mention_only_by_default(fake_env):
+    """Bot senders never wake implicitly: free-response + require_mention:false don't apply."""
+    fake_env["FLUXER_ALLOW_ALL_USERS"] = "true"
+    adapter = make_adapter(ignore_bots=False, free_response_channels=[CHANNEL])
+    adapter._require_mention = False
+    assert run_event(adapter, payload(bot=True, content="just posting")) == []
+    # The same message from a human still wakes (human policy unchanged).
+    assert len(run_event(adapter, payload(bot=False, content="just posting"))) == 1
+    # An explicit mention still wakes the bot sender path.
+    assert len(run_event(adapter, payload(bot=True, content=f"<@{BOT_ID}> hey"))) == 1
+
+
+def test_filter_bot_sender_mention_only_override(fake_env):
+    fake_env["FLUXER_ALLOW_ALL_USERS"] = "true"
+    adapter = make_adapter(
+        ignore_bots=False, bots_mention_only=False, free_response_channels=[CHANNEL]
+    )
+    assert len(run_event(adapter, payload(bot=True, content="just posting"))) == 1
+
+
+def test_filter_bot_sender_requires_mention_in_free_response_thread(fake_env):
+    fake_env["FLUXER_ALLOW_ALL_USERS"] = "true"
+    thread = "9991000000000000009"
+    adapter = make_adapter(ignore_bots=False, free_response_channels=[CHANNEL])
+    adapter._rest = FakeREST()
+    adapter._rest.channels[thread] = {
+        "id": thread, "type": 11, "parent_id": CHANNEL, "name": "bot-lane-test",
+    }
+    # Human: the thread inherits free-response (unchanged).
+    assert len(run_event(adapter, payload(
+        bot=False, content="hi", channel_id=thread, channel_type=11))) == 1
+    # Bot: an unmentioned post does not wake us...
+    assert run_event(adapter, payload(
+        bot=True, content="hi", channel_id=thread, channel_type=11)) == []
+    # ...but an explicit mention does.
+    assert len(run_event(adapter, payload(
+        bot=True, content=f"<@{BOT_ID}> hi", channel_id=thread, channel_type=11))) == 1
 
 
 def test_filter_unauthorized_users_fail_closed(fake_env):
