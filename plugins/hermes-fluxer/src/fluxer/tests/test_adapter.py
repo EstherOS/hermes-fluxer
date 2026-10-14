@@ -1,6 +1,7 @@
 """Unit tests for the fluxer adapter — no network, fake clients only.
 
 Covers: the MESSAGE_CREATE filter chain (each gate + trigger policy + chain breaker),
+inbound reply context (referenced_message → reply_to_* event fields),
 mention strip,
 outbound chunking (≤4000, newline-aware), send error mapping (retryable on 5xx /
 429-exhausted), typing throttle, env_enablement, platform-lock ordering, register().
@@ -21,6 +22,7 @@ from fluxer.adapter import (
     TYPING_THROTTLE_SECONDS,
     FluxerAdapter,
     _env_enablement,
+    _reply_context,
     _standalone_send,
     check_requirements,
     register,
@@ -52,7 +54,7 @@ def make_adapter(**extra) -> FluxerAdapter:
 
 def payload(*, author_id=OTHER_ID, content="hello", bot=False, channel_id=CHANNEL,
             channel_type=0, guild_id=GUILD, message_id="m1", attachments=None,
-            username="owner") -> dict:
+            username="owner", referenced_message=None, message_reference=None) -> dict:
     data = {
         "id": message_id, "channel_id": channel_id, "content": content,
         "channel_type": channel_type, "guild_id": guild_id,
@@ -61,6 +63,10 @@ def payload(*, author_id=OTHER_ID, content="hello", bot=False, channel_id=CHANNE
     }
     if attachments is not None:
         data["attachments"] = attachments
+    if referenced_message is not None:
+        data["referenced_message"] = referenced_message
+    if message_reference is not None:
+        data["message_reference"] = message_reference
     return data
 
 
@@ -370,6 +376,79 @@ def test_filter_source_fields_for_guild_message(fake_env):
     assert source.scope_id == GUILD
     assert source.message_id == "m42"
     assert events[0].message_id == "m42"
+
+
+# ── inbound reply context ────────────────────────────────────────────────────
+
+def test_reply_context_inlined_parent(fake_env):
+    fake_env["FLUXER_ALLOW_ALL_USERS"] = "true"
+    adapter = make_adapter(free_response_channels=[CHANNEL])
+    events = run_event(adapter, payload(
+        message_reference={"message_id": "m-parent", "channel_id": CHANNEL, "type": 0},
+        referenced_message={
+            "id": "m-parent", "content": "  what were the participants?  ",
+            "author": {"id": OTHER_ID, "username": "owner", "global_name": "Kairo"},
+        },
+    ))
+    event = events[0]
+    assert event.reply_to_message_id == "m-parent"
+    assert event.reply_to_text == "what were the participants?"
+    assert event.reply_to_author_id == OTHER_ID
+    assert event.reply_to_author_name == "Kairo"
+    assert event.reply_to_is_own_message is False
+
+
+def test_reply_context_to_bot_message_is_own(fake_env):
+    fake_env["FLUXER_ALLOW_ALL_USERS"] = "true"
+    adapter = make_adapter(free_response_channels=[CHANNEL])
+    events = run_event(adapter, payload(
+        message_reference={"message_id": "m-own", "channel_id": CHANNEL},
+        referenced_message={
+            "id": "m-own", "content": "my earlier answer",
+            "author": {"id": BOT_ID, "username": "FluxerBot"},
+        },
+    ))
+    event = events[0]
+    assert event.reply_to_message_id == "m-own"
+    assert event.reply_to_text == "my earlier answer"
+    assert event.reply_to_author_id == BOT_ID
+    assert event.reply_to_is_own_message is True
+
+
+def test_reply_context_unavailable_parent_keeps_anchor_only(fake_env):
+    fake_env["FLUXER_ALLOW_ALL_USERS"] = "true"
+    adapter = make_adapter(free_response_channels=[CHANNEL])
+    data = payload(message_reference={"message_id": "m-gone", "channel_id": CHANNEL})
+    data["referenced_message"] = None  # parent unavailable: null on the wire
+    events = run_event(adapter, data)
+    event = events[0]
+    assert event.reply_to_message_id == "m-gone"
+    assert event.reply_to_text is None
+    assert event.reply_to_is_own_message is False
+
+
+def test_plain_message_has_no_reply_context(fake_env):
+    fake_env["FLUXER_ALLOW_ALL_USERS"] = "true"
+    adapter = make_adapter(free_response_channels=[CHANNEL])
+    event = run_event(adapter, payload())[0]
+    assert event.reply_to_message_id is None
+    assert event.reply_to_text is None
+    assert event.reply_to_is_own_message is False
+
+
+def test_reply_context_helper_edge_cases():
+    assert _reply_context({}, BOT_ID) == {}
+    assert _reply_context({"referenced_message": "junk"}, BOT_ID) == {}
+    assert _reply_context(
+        {"referenced_message": {"id": "m1", "content": "", "author": {"id": OTHER_ID}}},
+        BOT_ID,
+    ) == {
+        "reply_to_message_id": "m1",
+        "reply_to_text": None,            # attachment-only parent: anchor, no quote
+        "reply_to_author_id": OTHER_ID,
+        "reply_to_author_name": OTHER_ID,  # display_name falls back to the id
+        "reply_to_is_own_message": False,
+    }
 
 
 def test_mention_strip_keeps_other_mentions(fake_env):

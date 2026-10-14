@@ -20,7 +20,7 @@ import tempfile
 import time
 from pathlib import Path
 from types import SimpleNamespace
-from typing import Any, Dict, List, Optional, Set
+from typing import Any, Dict, List, Mapping, Optional, Set
 from urllib.parse import unquote, urlsplit
 
 from gateway.config import Platform
@@ -56,7 +56,7 @@ if not _omni_imported:
 
 from .gatewayws import FluxerGatewayClient
 from .media import VOICE_MESSAGE_FLAG, cache_inbound_attachments, download_attachment
-from .models import AT_MENTION_RE, parse_message
+from .models import AT_MENTION_RE, display_name, parse_message
 from .rest import MAX_ATTACHMENT_BYTES, FluxerAPIError, FluxerREST
 from .voice import try_livekit
 from .voice.config import VoiceConfig, parse_voice_config
@@ -123,6 +123,34 @@ def _parse_timestamp(raw: Any) -> datetime.datetime:
                 else parsed.replace(tzinfo=datetime.timezone.utc)
             )
     return datetime.datetime.now(datetime.timezone.utc)
+
+
+def _reply_context(message: Mapping[str, Any], bot_id: Optional[str]) -> Dict[str, Any]:
+    """Reply-schema fields for one (parsed) inbound message.
+
+    Fluxer inlines the parent of a reply as ``referenced_message`` (absent on a
+    plain message; ``null`` when the parent is unavailable — the anchor then
+    survives in ``message_reference`` only).  Pure mapping, never fetches.
+    """
+    parent = message.get("referenced_message")
+    parent_id = str(parent.get("id") or "") if isinstance(parent, Mapping) else ""
+    if not parent_id:
+        reference = message.get("message_reference")
+        anchor = reference.get("message_id") if isinstance(reference, Mapping) else None
+        parent_id = str(anchor or "")
+    if not parent_id:
+        return {}
+    fields: Dict[str, Any] = {"reply_to_message_id": parent_id}
+    if isinstance(parent, Mapping) and str(parent.get("id") or "") == parent_id:
+        author = parent.get("author") or {}
+        author_id = str(author.get("id") or "") or None
+        fields.update(
+            reply_to_text=str(parent.get("content") or "").strip() or None,
+            reply_to_author_id=author_id,
+            reply_to_author_name=display_name(author) or None,
+            reply_to_is_own_message=bool(bot_id and author_id == bot_id),
+        )
+    return fields
 
 
 def _csv_set(raw: Any) -> Set[str]:
@@ -706,6 +734,9 @@ class FluxerAdapter(BasePlatformAdapter, OmniAdapterMixin):
                 if handled:
                     return
         raw_guild = str(guild_id) if guild_id else None
+        # Inbound reply context: the replied-to message rides on the event
+        # (``reply_to_*`` fields) so the runner can prepend its "Replying to …"
+        # pointer — the parent is inlined by the gateway, nothing is fetched.
         event = MessageEvent(
             text=text,
             message_type=message_type,
@@ -717,6 +748,7 @@ class FluxerAdapter(BasePlatformAdapter, OmniAdapterMixin):
             raw_message=(
                 SimpleNamespace(guild_id=raw_guild, guild=None) if raw_guild else None
             ),
+            **_reply_context(msg, self._bot_id),
         )
         # Voice-bound channel ephemeral preamble: every turn in a voice-active chat
         # gets the ``voice.input_prompt`` context (reply will be spoken).
