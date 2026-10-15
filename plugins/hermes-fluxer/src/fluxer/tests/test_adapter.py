@@ -387,14 +387,14 @@ def test_reply_context_inlined_parent(fake_env):
         message_reference={"message_id": "m-parent", "channel_id": CHANNEL, "type": 0},
         referenced_message={
             "id": "m-parent", "content": "  what were the participants?  ",
-            "author": {"id": OTHER_ID, "username": "owner", "global_name": "Kairo"},
+            "author": {"id": OTHER_ID, "username": "owner", "global_name": "Dana"},
         },
     ))
     event = events[0]
     assert event.reply_to_message_id == "m-parent"
     assert event.reply_to_text == "what were the participants?"
     assert event.reply_to_author_id == OTHER_ID
-    assert event.reply_to_author_name == "Kairo"
+    assert event.reply_to_author_name == "Dana"
     assert event.reply_to_is_own_message is False
 
 
