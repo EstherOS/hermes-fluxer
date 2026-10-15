@@ -899,6 +899,34 @@ def test_standalone_send_media_uploads_and_claims(fake_env, monkeypatch):
          "file_size": 3, "content_type": "image/png"}]
 
 
+def test_standalone_send_media_multiple_unique_attachment_ids(fake_env, monkeypatch):
+    """Duplicate attachment ids are rejected by Fluxer — claims get renumbered."""
+    fake_env["FLUXER_BOT_TOKEN"] = TOKEN
+    rest = FakeRESTWithUpload()
+    monkeypatch.setattr(adapter_mod, "FluxerREST", lambda token, base_url=None: rest)
+    result = asyncio.run(_standalone_send(make_config(), CHANNEL, "with files",
+                                          media_files=[("/tmp/x.png", False), ("/tmp/y.png", False)]))
+    assert result["success"] is True
+    sent = create_calls(rest)[0][4]
+    assert [c["id"] for c in sent] == [0, 1]
+
+
+def test_send_multiple_images_unique_attachment_ids(fake_env, tmp_path):
+    adapter = make_adapter()
+    rest = FakeRESTWithUpload()
+    adapter._rest = rest
+    a = tmp_path / "a.png"
+    a.write_bytes(b"a")
+    b = tmp_path / "b.png"
+    b.write_bytes(b"b")
+    result = asyncio.run(
+        adapter.send_multiple_images(CHANNEL, [(str(a), ""), (str(b), "")])
+    )
+    assert result.success is True
+    sent = create_calls(rest)[0][4]
+    assert [c["id"] for c in sent] == [0, 1]
+
+
 # ── blocked guilds ───────────────────────────────────────────────────────────
 
 def test_blocked_guild_silences_mention_and_logs(fake_env, caplog):

@@ -1453,6 +1453,11 @@ class FluxerAdapter(BasePlatformAdapter, OmniAdapterMixin):
                         )
                 if not claims:
                     continue
+                # Fluxer rejects duplicate attachment ids within one message; each
+                # single-file upload's claim echoes the plan-local id 0, so renumber
+                # the batch before sending.
+                for claim_idx, claim in enumerate(claims):
+                    claim["id"] = claim_idx
                 caption = next((alt for _p, _t, alt in batch if alt), None)
                 try:
                     await rest.create_message(
@@ -1866,7 +1871,7 @@ async def _standalone_send(
     message: str,
     *,
     thread_id: Optional[str] = None,
-    media_files: Optional[List[str]] = None,
+    media_files: Optional[List[Any]] = None,
     force_document: bool = False,
 ) -> Dict[str, Any]:
     """REST-only chunked send (no WS). ``media_files`` upload via ``FluxerREST.upload_attachment``
@@ -1892,7 +1897,17 @@ async def _standalone_send(
                 return _sa_error(
                     "media_files unsupported by this client build (no upload_attachment)"
                 )
-            attachments = [await upload(chat_id, path) for path in media_files]
+            attachments = []
+            for entry in media_files:
+                # Standard standalone contract (gateway/platform_registry):
+                # media_files entries are (path, is_voice) tuples — tolerate
+                # plain path strings for older callers.
+                media_path = entry[0] if isinstance(entry, (tuple, list)) else entry
+                attachments.append(await upload(chat_id, str(media_path)))
+            # Fluxer rejects duplicate attachment ids within one message (see
+            # send_multiple_images) — renumber the claims before they ride chunk 0.
+            for claim_idx, claim in enumerate(attachments):
+                claim["id"] = claim_idx
         last_id: Optional[str] = None
         for i, chunk in enumerate(chunks):
             response = await rest.create_message(
